@@ -35,7 +35,7 @@ class SocketMap {
         }
     }
 
-    private class SocketWrap {
+    static class SocketWrap {
         InetAddress address;
         int port;
         Socket socket;

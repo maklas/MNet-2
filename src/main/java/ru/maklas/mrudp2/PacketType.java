@@ -19,8 +19,14 @@ class PacketType {
 
     static final byte disconnect = 13;
 
-
-
+    static byte[] build5byte(byte settings, int seq, byte [] data){
+        int dataLength = data.length;
+        byte[] ret = new byte[dataLength + 5];
+        ret[0] = settings;
+        putInt(ret, seq, 1);
+        System.arraycopy(data, 0, ret, 5, dataLength);
+        return ret;
+    }
 
     static void putShort(byte[] bytes, int value, int offset){
         bytes[    offset] = (byte) (value >>> 8);
@@ -71,7 +77,7 @@ class PacketType {
     /**
      * @return (byte[] batchRequest, int currentPosition)
      */
-    public static Object[] buildSafeBatch(final int seq, byte settings, MRUDPBatch batch, final int pos, int bufferSize) {
+    public static Object[] buildSafeBatch(final int seq, byte settings, Batch batch, final int pos, int bufferSize) {
         ArrayList<byte[]> array = batch.array;
         int retSize = 6;
         int batchSize = array.size();
@@ -119,6 +125,34 @@ class PacketType {
             pos += packetSize + 2;
         }
         return ret;
+    }
+
+    public static String toString(byte type){
+        switch (type) {
+            case reliableRequest:
+                return "reliableReq";
+            case reliableAck:
+                return "reliableAck";
+            case unreliable:
+                return "unreliable";
+            case batch:
+                return "batch";
+            case pingRequest:
+                return "pingRequest";
+            case pingResponse:
+                return "pingResponse";
+            case connectionRequest:
+                return "connRequest";
+            case connectionResponseOk:
+                return "connResponseOk";
+            case connectionResponseError:
+                return "connResponseError";
+            case connectionAcknowledgment:
+                return "connAck";
+            case disconnect:
+                return "dc";
+        }
+        return "unknown";
     }
 
 }
