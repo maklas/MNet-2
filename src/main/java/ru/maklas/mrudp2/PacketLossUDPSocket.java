@@ -5,6 +5,9 @@ import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.SocketException;
 
+/**
+ * Simulates packet loss over UDP
+ */
 public class PacketLossUDPSocket implements UDPSocket{
 
     private UDPSocket delegate;

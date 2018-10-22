@@ -2,15 +2,18 @@ package ru.maklas.mrudp2;
 
 import java.util.ArrayList;
 
-public class MRUDPBatch {
+/**
+ * Used to send packets in a batch. All individual packets still must of size less than bufferSize.
+ */
+public class Batch {
 
     final ArrayList<byte[]> array;
 
-    public MRUDPBatch(int minSize) {
+    public Batch(int minSize) {
         this.array = new ArrayList<byte[]>(minSize);
     }
 
-    public MRUDPBatch() {
+    public Batch() {
         this.array = new ArrayList<byte[]>();
     }
 
@@ -28,6 +31,10 @@ public class MRUDPBatch {
 
     public byte[] get(int i){
         return array.get(i);
+    }
+
+    public void remove(int i){
+        array.remove(i);
     }
 
     public int calculateSize(){

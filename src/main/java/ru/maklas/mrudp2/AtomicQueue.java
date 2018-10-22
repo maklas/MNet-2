@@ -3,17 +3,16 @@ package ru.maklas.mrudp2;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceArray;
-
 /** A queue that allows one thread to call {@link #put(Object)} and another thread to call {@link #poll()}. Multiple threads must
  * not call these methods.
  * @author Matthias Mann */
-class MAtomicQueue<T> {
+class AtomicQueue<T> {
     private final AtomicInteger writeIndex = new AtomicInteger();
     private final AtomicInteger readIndex = new AtomicInteger();
     private final AtomicReferenceArray<T> queue;
     private final Object puttingMonitor = new Object();
 
-    public MAtomicQueue(int capacity) {
+    public AtomicQueue(int capacity) {
         queue = new AtomicReferenceArray(capacity);
     }
 

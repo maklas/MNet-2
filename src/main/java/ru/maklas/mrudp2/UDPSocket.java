@@ -27,6 +27,10 @@ public interface UDPSocket {
      */
     void receive(DatagramPacket packet) throws IOException;
 
+    /**
+     * Timeout after which socket.receive will throw SocketException
+     * @param millis time in milliseconds
+     */
     void setReceiveTimeout(int millis) throws SocketException;
 
     /**
@@ -40,5 +44,8 @@ public interface UDPSocket {
      */
     boolean isClosed();
 
+    /**
+     * Binds socket to the desired address, all datagrams will be send to and received from this address
+     */
     void connect(InetAddress address, int port);
 }

@@ -6,6 +6,9 @@ import java.net.InetAddress;
 import java.net.SocketException;
 import java.util.concurrent.LinkedBlockingQueue;
 
+/**
+ * Adds additional delay between sending and receiving data over UDP
+ */
 public class HighPingUDPSocket implements UDPSocket, Runnable{
 
     private final UDPSocket delegate;
@@ -133,11 +136,11 @@ public class HighPingUDPSocket implements UDPSocket, Runnable{
 
     private class Sender implements Runnable {
 
-        private final MAtomicQueue<DataTriplet> sendingQueue = new MAtomicQueue<DataTriplet>(15000);
+        private final AtomicQueue<DataTriplet> sendingQueue = new AtomicQueue<DataTriplet>(15000);
 
         @Override
         public void run() {
-            MAtomicQueue<DataTriplet> sendingQueue = this.sendingQueue;
+            AtomicQueue<DataTriplet> sendingQueue = this.sendingQueue;
             final DatagramPacket sendingPacket = new DatagramPacket(new byte[1400], 1400);
 
             try {
