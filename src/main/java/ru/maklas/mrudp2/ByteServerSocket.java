@@ -3,10 +3,8 @@ package ru.maklas.mrudp2;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
+import java.net.SocketException;
 import java.util.Iterator;
-
-import static ru.maklas.mrudp2.PacketType.build5byte;
-import static ru.maklas.mrudp2.PacketType.disconnect;
 
 /**
  * Job of a server socket is to accept new connections and handle subsockets.
@@ -14,16 +12,24 @@ import static ru.maklas.mrudp2.PacketType.disconnect;
 public class ByteServerSocket {
 
     final UDPSocket udp;
-    private final int bufferSize;
     private final ConnectionProcessor connectionProcessor;
-    private SocketMap socketMap;
+    private final SocketMap socketMap;
     private AtomicQueue<ConnectionRequest> connectionRequests;
     private DatagramPacket sendPacket; //update thread
-    private final int dcTimeout = 15000;
+    private int inactivityTimeout = 15000;
+    private int bufferSize = 512;
+    private int pingFrequency = 2500;
+    private int resendFrequency = 125;
 
-    public ByteServerSocket(UDPSocket udp, int bufferSize, ConnectionProcessor connectionProcessor) {
+    public ByteServerSocket(int port, ConnectionProcessor connectionProcessor) throws SocketException {
+        this(new JavaUDPSocket(port), 512, 15000, 2500, 125, connectionProcessor);
+    }
+    public ByteServerSocket(UDPSocket udp, int bufferSize, int inactivityTimeout, int pingFrequency, int resendFrequency, ConnectionProcessor connectionProcessor) {
         this.udp = udp;
         this.bufferSize = bufferSize;
+        this.inactivityTimeout = inactivityTimeout;
+        this.pingFrequency = pingFrequency;
+        this.resendFrequency = resendFrequency;
         this.connectionProcessor = connectionProcessor;
         this.socketMap = new SocketMap();
         this.connectionRequests = new AtomicQueue<ConnectionRequest>(1000);
@@ -81,7 +87,7 @@ public class ByteServerSocket {
             if (socketMap.get(poll.address, poll.port) != null) continue; //Отбрасываем если кто-то уже коннектился и подтвердился.
 
             //Создаём полупустой сокет
-            ByteSocket socket = new ByteSocket(udp, poll.address, poll.port, bufferSize, dcTimeout);
+            ByteSocket socket = new ByteSocket(udp, poll.address, poll.port, bufferSize);
             //Авторизация
             Response<byte[]> response = connectionProcessor.acceptConnection(socket, poll.userRequest);
             if (response == null) response = Response.refuse(new byte[0]);
@@ -92,7 +98,7 @@ public class ByteServerSocket {
             //Отвечаем. Если accept, инициализируем и заносим сокет в список.
             byte[] fullResponseData = buildFullResponsePacket(response);
             if (response.accepted()){
-                socket.init(this, fullResponseData);
+                socket.init(this, fullResponseData, inactivityTimeout, pingFrequency, resendFrequency);
                 socketMap.put(poll.address, poll.port, socket);
             }
             sendPacket.setAddress(poll.address);
@@ -113,12 +119,14 @@ public class ByteServerSocket {
     private void updateDCAndSockets(){
         long now = System.currentTimeMillis();
         synchronized (socketMap){
-            for (Iterator<SocketMap.SocketWrap> iter = socketMap.sockets.iterator(); iter.hasNext();) {
-                SocketMap.SocketWrap wrap = iter.next();
-                if (now - wrap.socket.lastTimeReceivedMsg > dcTimeout){
-                    wrap.socket.queue.put(new ByteSocket.DisconnectionPacket(ByteSocket.DisconnectionPacket.TIMED_OUT, DCType.TIME_OUT));
+            for (SocketMap.SocketWrap wrap : socketMap.sockets) {
+                ByteSocket socket = wrap.socket;
+                if (now - socket.lastTimeReceivedMsg > socket.inactivityTimeout) {
+                    socket.queue.put(new ByteSocket.DisconnectionPacket(ByteSocket.DisconnectionPacket.TIMED_OUT, DCType.TIME_OUT));
                 } else {
-                    wrap.socket.checkResendAndPing();
+                    if (socket.isConnected()) {
+                        socket.checkResendAndPing();
+                    }
                 }
             }
         }
@@ -147,7 +155,11 @@ public class ByteServerSocket {
     }
 
     public Array<ByteSocket> getSockets(){
-        Array<ByteSocket> sockets = new Array<ByteSocket>();
+        return getSockets(new Array<ByteSocket>());
+    }
+
+    public Array<ByteSocket> getSockets(Array<ByteSocket> sockets){
+        sockets.clear();
         synchronized (socketMap){
             for (SocketMap.SocketWrap socket : socketMap.sockets) {
                 sockets.add(socket.socket);
@@ -161,16 +173,9 @@ public class ByteServerSocket {
     }
 
     public void close(){
-        synchronized (socketMap){
-            for (SocketMap.SocketWrap wrap : socketMap.sockets) {
-                ByteSocket socket = wrap.socket;
-                if (socket.state != SocketState.CLOSED){
-                    socket.state = SocketState.CLOSED;
-                    socket.sendData(build5byte(disconnect, 0, DCType.SERVER_SHUTDOWN.getBytes()));
-                    socket.notifyDcListenersAndRemoveAll(DCType.SERVER_SHUTDOWN);
-                }
-            }
-            socketMap.clear();
+        Array<ByteSocket> sockets = getSockets();
+        for (ByteSocket socket : sockets) {
+            socket.close(DCType.SERVER_SHUTDOWN);
         }
         udp.close();
     }

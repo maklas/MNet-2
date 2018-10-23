@@ -25,4 +25,16 @@ class Utils {
         }
     }
 
+    public static byte[] trimDCMessage(String s, int bufferSize){
+        if (s == null) return DCType.CLOSED.getBytes();
+        byte[] msgBytes = s.getBytes();
+        if (msgBytes.length <= bufferSize - 5) {
+            return msgBytes;
+        }
+
+        byte[] trimmed = new byte[bufferSize - 5];
+        System.arraycopy(msgBytes, 0, trimmed, 0, trimmed.length);
+        return trimmed;
+    }
+
 }

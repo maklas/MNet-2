@@ -22,7 +22,7 @@ public class TestMRUDP {
                 serverLooper.addLooper(
                         new Looper(socket, new SocketProcessor() {
                             @Override
-                            public void process(ByteSocket sock, SocketIterator si, byte[] data) {
+                            public void process(ByteSocket sock, byte[] data) {
                                 //int val = PacketType.extractInt(data, 0);
                                 //System.out.println(val);
                                 //byte[] response = generateResponse(data);
@@ -51,11 +51,11 @@ public class TestMRUDP {
         });
 
 
-        final ByteSocket client = new ByteSocket(InetAddress.getLocalHost(), port, 512, 15000);
+        final ByteSocket client = new ByteSocket(InetAddress.getLocalHost(), port, 512, 15000, 2500, 100);
         clientLooper = new Looper(client, new SocketProcessor() {
 
             @Override
-            public void process(ByteSocket sock, SocketIterator si, byte[] data) {
+            public void process(ByteSocket sock, byte[] data) {
                 int val = PacketType.extractInt(data, 0);
                 curr.set(val);
                 System.out.println(val);
@@ -66,7 +66,7 @@ public class TestMRUDP {
 
 
         Log.trace("Connecting to server...");
-        ConnectionResponse response = client.connect(new byte[]{1, 1, 1}, 1000);
+        ConnectionResponse response = client.connect(new byte[]{1, 1, 1}, 10000);
         Log.trace("Response: " + response);
 
         client.addPingListener(new PingListener() {
@@ -83,20 +83,7 @@ public class TestMRUDP {
         Thread.sleep(100);
         Log.trace("Sending first request...");
 
-        Batch batch = new Batch();
-        batch.add(new byte[]{1});
-        batch.add(new byte[]{1, 1});
-        batch.add(new byte[]{1, 1, 1});
-        batch.add(new byte[]{1, 1, 1, 1});
-        batch.add(new byte[]{1, 1, 1, 1, 1});
-
-        batch.add(new byte[]{0, 0, 0, 0});
-        batch.add(new byte[]{0, 0, 0, 1});
-        batch.add(new byte[]{0, 0, 1, 0});
-        batch.add(new byte[]{0, 1, 0, 0});
-        batch.add(new byte[]{1, 1, 1, 1});
-
-        client.sendBatch(batch);
+        client.send(new byte[]{1, 1, 1, 1, 1});
         client.addDcListener(new DCListener() {
             @Override
             public void socketClosed(ByteSocket socket, String msg) {
@@ -104,7 +91,7 @@ public class TestMRUDP {
             }
         });
 
-        Thread.sleep(5000);
+        Thread.sleep(50000);
 
         serverLooper.serverSocket.close();
 

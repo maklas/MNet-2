@@ -8,7 +8,7 @@ public class ServerLooper implements Runnable {
     Array<Looper> loopers = new Array<Looper>();
 
     public ServerLooper(int port, ConnectionProcessor auth) throws SocketException {
-        this.serverSocket = new ByteServerSocket(new PacketLossUDPSocket(new JavaUDPSocket(port), 0), 512, auth);
+        this.serverSocket = new ByteServerSocket(new PacketLossUDPSocket(new JavaUDPSocket(port), 80), 512, 15000, 2500, 125, auth);
         new Thread(this).start();
     }
 
