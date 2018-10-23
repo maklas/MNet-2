@@ -1,0 +1,13 @@
+<component name="libraryTable">
+  <library name="Maven: com.github.maklas:kryo:kryo-2.24.0-maklas">
+    <CLASSES>
+      <root url="jar://$MAVEN_REPOSITORY$/com/github/maklas/kryo/kryo-2.24.0-maklas/kryo-kryo-2.24.0-maklas.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$MAVEN_REPOSITORY$/com/github/maklas/kryo/kryo-2.24.0-maklas/kryo-kryo-2.24.0-maklas-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$MAVEN_REPOSITORY$/com/github/maklas/kryo/kryo-2.24.0-maklas/kryo-kryo-2.24.0-maklas-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
