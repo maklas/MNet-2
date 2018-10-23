@@ -1,5 +1,7 @@
 package ru.maklas.mrudp2;
 
+import java.util.Arrays;
+
 public class ConnectionResponse {
 
     ResponseType type;
@@ -29,4 +31,11 @@ public class ConnectionResponse {
         return data;
     }
 
+    @Override
+    public String toString() {
+        return "{" +
+                "type=" + type +
+                ", data=" + Arrays.toString(data) +
+                '}';
+    }
 }

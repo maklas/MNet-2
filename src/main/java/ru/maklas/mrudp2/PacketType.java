@@ -4,20 +4,22 @@ import java.util.ArrayList;
 
 class PacketType {
 
-    static final byte reliableRequest = 1;
-    static final byte reliableAck = 2;
-    static final byte unreliable = 3;
-    static final byte batch = 4;
+    static final byte connectionRequest = 1;
+    static final byte connectionResponseOk = 2;
+    static final byte connectionResponseError = 3;
 
-    static final byte pingRequest = 6;
-    static final byte pingResponse = 7;
+    static final byte reliableRequest = 10;
+    static final byte reliableAck = 11;
 
-    static final byte connectionRequest = 8;
-    static final byte connectionResponseOk = 9;
-    static final byte connectionResponseError = 10;
-    static final byte connectionAcknowledgment = 11;
+    static final byte unreliable = 20;
 
-    static final byte disconnect = 13;
+    static final byte batch = 30;
+
+    static final byte pingRequest = 40;
+    static final byte pingResponse = 41;
+
+    static final byte disconnect = 50;
+
 
     static byte[] build5byte(byte settings, int seq, byte [] data){
         int dataLength = data.length;
@@ -147,8 +149,6 @@ class PacketType {
                 return "connResponseOk";
             case connectionResponseError:
                 return "connResponseError";
-            case connectionAcknowledgment:
-                return "connAck";
             case disconnect:
                 return "dc";
         }

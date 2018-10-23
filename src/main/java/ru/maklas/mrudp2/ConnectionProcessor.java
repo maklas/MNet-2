@@ -8,5 +8,5 @@ public interface ConnectionProcessor {
     /**
      * Make a decision if you want to accept new connection here.
      */
-    Response<byte[]> acceptConnection(Socket socket, byte[] userData);
+    Response<byte[]> acceptConnection(ByteSocket socket, byte[] userData);
 }

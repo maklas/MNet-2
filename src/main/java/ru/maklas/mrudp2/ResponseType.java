@@ -1,6 +1,5 @@
 package ru.maklas.mrudp2;
 
-@Deprecated
 public enum ResponseType {
 
     /**

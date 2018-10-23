@@ -4,12 +4,11 @@ import java.net.SocketException;
 
 public class ServerLooper implements Runnable {
 
-    ServerSocket serverSocket;
-    private final ConnectionProcessor auth;
+    ByteServerSocket serverSocket;
+    Array<Looper> loopers = new Array<Looper>();
 
     public ServerLooper(int port, ConnectionProcessor auth) throws SocketException {
-        this.serverSocket = new ServerSocket(new PacketLossUDPSocket(new JavaUDPSocket(port), 50), 512, auth);
-        this.auth = auth;
+        this.serverSocket = new ByteServerSocket(new PacketLossUDPSocket(new JavaUDPSocket(port), 0), 512, auth);
         new Thread(this).start();
     }
 
@@ -18,9 +17,20 @@ public class ServerLooper implements Runnable {
     public void run() {
         while (!serverSocket.isClosed()) {
             serverSocket.update();
+
+            for (Looper looper : loopers) {
+                looper.update();
+            }
+
             try {
                 Thread.sleep(16);
             } catch (InterruptedException e) {}
         }
+
+
+    }
+
+    public void addLooper(Looper looper){
+        this.loopers.add(looper);
     }
 }

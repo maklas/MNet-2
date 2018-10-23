@@ -5,10 +5,13 @@ import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.util.Iterator;
 
+import static ru.maklas.mrudp2.PacketType.build5byte;
+import static ru.maklas.mrudp2.PacketType.disconnect;
+
 /**
  * Job of a server socket is to accept new connections and handle subsockets.
  */
-public class ServerSocket {
+public class ByteServerSocket {
 
     final UDPSocket udp;
     private final int bufferSize;
@@ -18,7 +21,7 @@ public class ServerSocket {
     private DatagramPacket sendPacket; //update thread
     private final int dcTimeout = 15000;
 
-    public ServerSocket(UDPSocket udp, int bufferSize, ConnectionProcessor connectionProcessor) {
+    public ByteServerSocket(UDPSocket udp, int bufferSize, ConnectionProcessor connectionProcessor) {
         this.udp = udp;
         this.bufferSize = bufferSize;
         this.connectionProcessor = connectionProcessor;
@@ -28,7 +31,7 @@ public class ServerSocket {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                ServerSocket.this.run();
+                ByteServerSocket.this.run();
             }
         }).start();
     }
@@ -44,10 +47,7 @@ public class ServerSocket {
             try {
                 udp.receive(packet);
             } catch (IOException e) {
-                e.printStackTrace();
                 if (udp.isClosed()){
-
-                    //TODO notify all that server is closed
                     break;
                 }
                 continue;
@@ -56,7 +56,7 @@ public class ServerSocket {
             byte type = buffer[0];
             if (len <= 5) continue;
 
-            Socket mSocket = socketMap.get(packet);
+            ByteSocket mSocket = socketMap.get(packet);
             if (mSocket != null){
                 mSocket.receiveData(buffer, type, len);
             } else if (type == PacketType.connectionRequest){
@@ -81,7 +81,7 @@ public class ServerSocket {
             if (socketMap.get(poll.address, poll.port) != null) continue; //Отбрасываем если кто-то уже коннектился и подтвердился.
 
             //Создаём полупустой сокет
-            Socket socket = new Socket(udp, poll.address, poll.port, bufferSize, dcTimeout);
+            ByteSocket socket = new ByteSocket(udp, poll.address, poll.port, bufferSize, dcTimeout);
             //Авторизация
             Response<byte[]> response = connectionProcessor.acceptConnection(socket, poll.userRequest);
             if (response == null) response = Response.refuse(new byte[0]);
@@ -116,9 +116,7 @@ public class ServerSocket {
             for (Iterator<SocketMap.SocketWrap> iter = socketMap.sockets.iterator(); iter.hasNext();) {
                 SocketMap.SocketWrap wrap = iter.next();
                 if (now - wrap.socket.lastTimeReceivedMsg > dcTimeout){
-                    iter.remove();
-                    System.out.println("TIMEOUT of server subsocket");
-                    //TODO remove(wrap.socket);
+                    wrap.socket.queue.put(new ByteSocket.DisconnectionPacket(ByteSocket.DisconnectionPacket.TIMED_OUT, DCType.TIME_OUT));
                 } else {
                     wrap.socket.checkResendAndPing();
                 }
@@ -148,8 +146,8 @@ public class ServerSocket {
         return udp;
     }
 
-    public Array<Socket> getSockets(){
-        Array<Socket> sockets = new Array<Socket>();
+    public Array<ByteSocket> getSockets(){
+        Array<ByteSocket> sockets = new Array<ByteSocket>();
         synchronized (socketMap){
             for (SocketMap.SocketWrap socket : socketMap.sockets) {
                 sockets.add(socket.socket);
@@ -158,7 +156,24 @@ public class ServerSocket {
         return sockets;
     }
 
+    void removeMe(ByteSocket socket) {
+        socketMap.remove(socket);
+    }
 
+    public void close(){
+        synchronized (socketMap){
+            for (SocketMap.SocketWrap wrap : socketMap.sockets) {
+                ByteSocket socket = wrap.socket;
+                if (socket.state != SocketState.CLOSED){
+                    socket.state = SocketState.CLOSED;
+                    socket.sendData(build5byte(disconnect, 0, DCType.SERVER_SHUTDOWN.getBytes()));
+                    socket.notifyDcListenersAndRemoveAll(DCType.SERVER_SHUTDOWN);
+                }
+            }
+            socketMap.clear();
+        }
+        udp.close();
+    }
 
     private class ConnectionRequest {
         InetAddress address;

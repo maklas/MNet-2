@@ -4,13 +4,12 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.SocketException;
-import java.util.Arrays;
 import java.util.ConcurrentModificationException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static ru.maklas.mrudp2.PacketType.*;
 
-public class Socket implements SocketIterator {
+public class ByteSocket implements SocketIterator {
 
     /**
      * Size of receiving packet queue. If it overflows, data might be lost.
@@ -23,25 +22,27 @@ public class Socket implements SocketIterator {
     private final InetAddress address;
     private final int port;
     private final UDPSocket udp;
-    private volatile SocketState state;
+    volatile SocketState state;
+    private int bufferSize;
     private Thread receiveThread;
     private int dcTimeDueToInactivity;
     private boolean isClientSocket;
-    private volatile int lastInsertedSeq = 0;
+    private volatile int lastInsertedSeq = -1;
     volatile long lastTimeReceivedMsg = 0;
     private final AtomicInteger seq = new AtomicInteger();
-    private Pool<SendPacket> sendPacketPool = new Pool<SendPacket>() {
+    private Pool<ResendPacket> sendPacketPool = new Pool<ResendPacket>() {
         @Override
-        protected SendPacket newObject() {
-            return new SendPacket();
+        protected ResendPacket newObject() {
+            return new ResendPacket();
         }
     };
-    private long resendCD = 100;
+    private long resendCD = 20;
+    private volatile DisconnectionPacket dcPacket;
     //Отправленные надёжные пакеты, требущие подтверждения или пересылаются.
-    private final SortedIntList<SendPacket> requestList = new SortedIntList<SendPacket>();
+    private final SortedIntList<ResendPacket> requestList = new SortedIntList<ResendPacket>();
     //Очередь с принятными отсортированными сообщениями.
     //byte[] - Пакет, String - Сообщение дисконнекта, Float - пинг.
-    private final AtomicQueue<Object> queue = new AtomicQueue<Object>(receivingQueueSize);
+    final AtomicQueue<Object> queue = new AtomicQueue<Object>(receivingQueueSize);
     //Очередь в которой полученные пакеты сортируются, если они были получены в неправильной последовательности
     //byte[] - пакет или пинг если длинна == 0, byte[][] - batch пакет
     private final SortedIntList<Object> receivingSortQueue = new SortedIntList<Object>();
@@ -49,28 +50,34 @@ public class Socket implements SocketIterator {
     //Ping
     private float currentPing;
     private long lastPingSendTime;
-    private long pingCD = 500;
+    private long pingCD = 2500;
 
-    //Utils
+    //datagram packets
     private DatagramPacket sendPacket;
     private DatagramPacket ackPacket;
     private DatagramPacket receivePacket;
     private DatagramPacket pingResponsePacket;
-    private ServerSocket server;
     private DatagramPacket serverConnectionResponse; //Ответ сервера на connectionRequest.
     private byte[] sendBuffer;
     private byte[] receiveBuffer;
     private byte[] ackBuffer;
     private byte[] pingResponseBuffer;
+
+    //processing
     private boolean processing = false; //true if processing right now
     private boolean interrupted = false; //true if interrupted processing.
-    private int bufferSize;
+
+
+    //Utils
+    private ByteServerSocket server;
     private Array<PingListener> pingListeners = new Array<PingListener>();
+    private Array<DCListener> dcListeners = new Array<DCListener>();
+    private Object userData = null;
 
     /**
      * DEFAULT CONSTRCUTOR FOR SOCKET
      */
-    public Socket(InetAddress address, int port, int bufferSize, int dcTimeDueToInactivity) throws SocketException {
+    public ByteSocket(InetAddress address, int port, int bufferSize, int dcTimeDueToInactivity) throws SocketException {
         this.address = address;
         this.port = port;
         this.bufferSize = bufferSize;
@@ -99,7 +106,7 @@ public class Socket implements SocketIterator {
     /**
      * ONLY USED BY SERVERS_SOCKET to construct new SUBSOCKET
      */
-    Socket(UDPSocket udp, InetAddress address, int port, int bufferSize, int dcTimeDueToInactivity) {
+    ByteSocket(UDPSocket udp, InetAddress address, int port, int bufferSize, int dcTimeDueToInactivity) {
         this.address = address;
         this.port = port;
         this.bufferSize = bufferSize;
@@ -112,7 +119,7 @@ public class Socket implements SocketIterator {
     /**
      * Initialization done by server after Socket was accepted
      */
-    void init(ServerSocket serverSocket, byte[] fullResponseData) {
+    void init(ByteServerSocket serverSocket, byte[] fullResponseData) {
         this.server = serverSocket;
         this.serverConnectionResponse = new DatagramPacket(fullResponseData, fullResponseData.length);
         serverConnectionResponse.setAddress(address);
@@ -151,8 +158,8 @@ public class Socket implements SocketIterator {
         if (timeout < 600){
             wait = 200;
             attempts = 3;
-        } else if (timeout < 5000){
-            wait = 400;
+        } else if (timeout < 2000){
+            wait = 333;
             attempts = timeout / wait;
         } else {
             wait = 666;
@@ -202,7 +209,6 @@ public class Socket implements SocketIterator {
         this.lastTimeReceivedMsg = System.currentTimeMillis();
         lastPingSendTime = lastTimeReceivedMsg;
         currentPing = (lastTimeReceivedMsg - beforeFirstRequest);
-        log("Ping on connect: " + currentPing);
         launchReceiveThread();
         return new ConnectionResponse(ResponseType.ACCEPTED, responseData);
     }
@@ -211,19 +217,17 @@ public class Socket implements SocketIterator {
         receiveThread = new Thread(new Runnable() {
             @Override
             public void run() {
-                byte[] receiveBuffer = Socket.this.receiveBuffer;
-                DatagramPacket packet = Socket.this.receivePacket;
-                UDPSocket udp = Socket.this.udp;
+                byte[] receiveBuffer = ByteSocket.this.receiveBuffer;
+                DatagramPacket packet = ByteSocket.this.receivePacket;
+                UDPSocket udp = ByteSocket.this.udp;
                 boolean keepRunning = true;
                 while (keepRunning) {
                     try {
                         udp.receive(packet);
                     } catch (IOException e) {
-                        if (udp.isClosed()) {
-                            keepRunning = false;
-                        } else {
-                            System.out.println("TIMEOUT of client socket");
-                            //TODO Timeout.
+                        keepRunning = false;
+                        if (!udp.isClosed()) {
+                            queue.put(new DisconnectionPacket(DisconnectionPacket.TIMED_OUT, DCType.TIME_OUT));
                         }
                     }
 
@@ -266,10 +270,10 @@ public class Socket implements SocketIterator {
                 break;
             case unreliable:
                 byte[] bytes2 = new byte[length - 5];
-                System.arraycopy(fullPacket, 1, bytes2, 0, length - 5);
+                System.arraycopy(fullPacket, 1, bytes2, 0, length - 1);
                 queue.put(bytes2);
                 break;
-            /*case batch:
+            case batch:
                 sendAck(seq);
                 int expectedSeq2 = lastInsertedSeq + 1;
                 if (seq < expectedSeq2){
@@ -277,18 +281,20 @@ public class Socket implements SocketIterator {
                 }
 
                 try {
-                    byte[][] batchPackets = PacketType.breakBatchDown(fullPacket);
+                    byte[][] batchPackets;
                     if (seq == expectedSeq2){
                         lastInsertedSeq = seq;
+                        batchPackets = PacketType.breakBatchDown(fullPacket);
                         for (byte[] batchPacket : batchPackets) {
                             queue.put(batchPacket);
                         }
                         updateReceiveOrderQueue();
                     } else if (seq > expectedSeq2){
+                        batchPackets = PacketType.breakBatchDown(fullPacket);
                         addToWaitings(seq, batchPackets);
                     }
                 } catch (Exception ignore){}
-                break;*/
+                break;
             case pingRequest:
                 final long startTime = extractLong(fullPacket, 5);
                 sendPingResponse(seq, startTime);
@@ -320,12 +326,14 @@ public class Socket implements SocketIterator {
                 break;
             case connectionResponseOk:
             case connectionResponseError:
-            case connectionAcknowledgment:
                 //Ничего.
                 break;
             case disconnect:
-                //Достаём месседж, дисконнектим
+                String msg = new String(fullPacket, 5, length - 5);
+                queue.put(new DisconnectionPacket(DisconnectionPacket.EVENT_RECEIVED, msg));
                 break;
+            default:
+                System.err.println("Unknown message type: " + type);
         }
     }
 
@@ -354,42 +362,13 @@ public class Socket implements SocketIterator {
 
     private boolean removeFromWaitingForAck(int seq) {
         synchronized (requestList){
-            SendPacket removed = requestList.remove(seq);
+            ResendPacket removed = requestList.remove(seq);
             if (removed != null){
                 sendPacketPool.free(removed);
-                log("request removed (" + seq + "). Size: " + requestList.size);
                 return true;
             }
         }
         return false;
-    }
-
-    /**
-     * Проверить объекты которые ждут свою очередь
-     */
-    private void updateReceiveOrderQueue() {
-        int expectedSeq;
-
-        synchronized (receivingSortQueue) {
-            expectedSeq = lastInsertedSeq + 1;
-            Object mayBeData = receivingSortQueue.remove(expectedSeq);
-
-            while (mayBeData != null) {
-                this.lastInsertedSeq = expectedSeq;
-                if (mayBeData instanceof byte[]){
-                    if (((byte[]) mayBeData).length > 0) { // Если в очереди не пинг
-                        queue.put(mayBeData);
-                    }
-                } else {
-                    byte[][] batch = (byte[][]) mayBeData;
-                    for (byte[] bytes : batch) {
-                        queue.put(bytes);
-                    }
-                }
-                expectedSeq = lastInsertedSeq + 1;
-                mayBeData = receivingSortQueue.remove(expectedSeq);
-            }
-        }
     }
 
     //***********//
@@ -414,10 +393,33 @@ public class Socket implements SocketIterator {
         sendData(fullPackage);
     }
 
+    public void sendBatch(Batch batch){
+        int size = batch.size();
+        switch (size){
+            case 0: return;
+            case 1:
+                send(batch.get(0));
+                return;
+        }
+
+        int bufferSize = this.bufferSize;
+
+        int i = 0;
+        while (i < size){
+            int seq = this.seq.getAndIncrement();
+            Object[] tuple = buildSafeBatch(seq, PacketType.batch, batch, i, bufferSize);
+            byte[] fullPackage = (byte[]) tuple[0];
+            i = ((Integer) tuple[1]);
+            saveRequest(seq, fullPackage);
+            sendData(fullPackage);
+        }
+    }
+
     public void update(SocketProcessor processor) {
         processData(processor);
         checkResendAndPing();
     }
+
 
     /**
      * @return True if got interrupted in the middle of the process
@@ -426,6 +428,8 @@ public class Socket implements SocketIterator {
         if (processing){
             throw new ConcurrentModificationException("Can't be processed by 2 threads at the same time");
         }
+        if (!isConnected()) return false;
+
         processing = true;
         interrupted = false;
         try {
@@ -438,12 +442,25 @@ public class Socket implements SocketIterator {
                     for (PingListener pingListener : pingListeners) {
                         pingListener.onPingChange(this, (Float) poll);
                     }
-                } else if (poll instanceof String){
-                    if (!isClientSocket){
-                        //receivedDCByServerOrTimeOut((String) poll);
-                    } else {
-                        //receivedDCByClientOrTimeOut((String) poll);
+                } else if (poll instanceof DisconnectionPacket){
+                    state = SocketState.CLOSED;
+                    interrupted = true;
+
+                    DisconnectionPacket dcPacket = (DisconnectionPacket) poll;
+                    this.dcPacket = dcPacket;
+
+                    if (dcPacket.type == DisconnectionPacket.TIMED_OUT){
+                        byte[] bytes = build5byte(disconnect, 0, dcPacket.message.getBytes());
+                        sendData(bytes);
                     }
+
+                    if (isClientSocket){
+                        if (!udp.isClosed()) udp.close();
+                    } else {
+                        server.removeMe(this);
+                    }
+
+                    notifyDcListenersAndRemoveAll(dcPacket.message);
                     break;
                 }
                 if (interrupted){
@@ -464,11 +481,28 @@ public class Socket implements SocketIterator {
     //***********//
 
     public boolean isClosed() {
-        return udp.isClosed();
+        return state == SocketState.CLOSED;
     }
 
     public void close(){
-        udp.close();
+        close(DCType.CLOSED);
+    }
+
+    public void close(String msg){
+        if (state != SocketState.CLOSED) {
+            if (isClientSocket) {
+                if (!udp.isClosed()) {
+                    this.dcPacket = new DisconnectionPacket(DisconnectionPacket.SELF_CLOSED, msg);
+                    sendData(build5byte(disconnect, 0, msg.getBytes()));
+                    udp.close();
+                    notifyDcListenersAndRemoveAll(msg);
+                }
+            } else {
+                server.removeMe(this);
+                notifyDcListenersAndRemoveAll(msg);
+            }
+            state = SocketState.CLOSED;
+        }
     }
 
     public UDPSocket getUdp() {
@@ -497,6 +531,32 @@ public class Socket implements SocketIterator {
         pingListeners.removeValue(pl, true);
     }
 
+    public void addDcListener(DCListener dl){
+        dcListeners.add(dl);
+    }
+
+    public void removeDcListener(DCListener dl){
+        dcListeners.removeValue(dl, true);
+    }
+
+    public boolean isConnected(){
+        return state == SocketState.CONNECTED;
+    }
+
+    public float getPing() {
+        return currentPing;
+    }
+
+    public <T> T getUserData() {
+        return (T) userData;
+    }
+
+    public <T> T setUserData(Object userData) {
+        T oldData = (T) this.userData;
+        this.userData = userData;
+        return oldData;
+    }
+
     //*********//
     //* UTILS *//
     //*********//
@@ -512,6 +572,14 @@ public class Socket implements SocketIterator {
         }
     }
 
+    void notifyDcListenersAndRemoveAll(String msg){
+        for (DCListener dcListener : dcListeners) {
+            dcListener.socketClosed(this, msg);
+        }
+        dcListeners.clear();
+        pingListeners.clear();
+    }
+
     void checkResendAndPing() {
         if (state == SocketState.CONNECTED){
             final long currTime = System.currentTimeMillis();
@@ -521,11 +589,10 @@ public class Socket implements SocketIterator {
             }
             long resendCD = this.resendCD;
             synchronized (requestList) {
-                for (SortedIntList.Node<SendPacket> pack : requestList) {
-                    SendPacket packet = pack.value;
+                for (SortedIntList.Node<ResendPacket> pack : requestList) {
+                    ResendPacket packet = pack.value;
                     if (currTime - packet.sendTime > resendCD){
                         sendData(packet.data);
-                        log("Resending data " + "last attempt was " + ((int) packet.sendTime) + " now is " + ((int) currTime), packet.data);
                         packet.sendTime = currTime;
                     }
                 }
@@ -535,12 +602,40 @@ public class Socket implements SocketIterator {
 
     private void saveRequest(int seq, byte[] fullPackage) {
         synchronized (requestList) {
-            log("request saved (" + seq + ")");
             requestList.insert(seq, sendPacketPool.obtain().set(fullPackage));
         }
     }
 
-    private void sendData(byte[] fullPackage) {
+    /**
+     * Проверить объекты которые ждут свою очередь
+     */
+    private void updateReceiveOrderQueue() {
+        int expectedSeq;
+
+        SortedIntList<Object> queue = this.receivingSortQueue;
+        synchronized (queue) {
+            expectedSeq = lastInsertedSeq + 1;
+            Object mayBeData = queue.remove(expectedSeq);
+
+            while (mayBeData != null) {
+                this.lastInsertedSeq = expectedSeq;
+                if (mayBeData instanceof byte[]){
+                    if (((byte[]) mayBeData).length > 0) { // Если в очереди не пинг
+                        this.queue.put(mayBeData);
+                    }
+                } else {
+                    byte[][] batch = (byte[][]) mayBeData;
+                    for (byte[] bytes : batch) {
+                        this.queue.put(bytes);
+                    }
+                }
+                expectedSeq = lastInsertedSeq + 1;
+                mayBeData = queue.remove(expectedSeq);
+            }
+        }
+    }
+
+    void sendData(byte[] fullPackage) {
         System.arraycopy(fullPackage, 0, sendBuffer, 0, fullPackage.length);
         try {
             sendPacket.setLength(fullPackage.length);
@@ -560,41 +655,29 @@ public class Socket implements SocketIterator {
         sendData(fullPackage);
     }
 
-    private void log(String msg, byte[] data){
-        System.out.println((isClientSocket ? "Client:: " : "Server:: ") + msg + ". Data: " + toString(data));
-    }
-
-    private static String toString(byte[] a) {
-        if (a == null)
-            return "null";
-        int iMax = a.length - 1;
-        if (iMax == -1)
-            return "[]";
-
-        StringBuilder b = new StringBuilder();
-        b.append('[');
-        b.append(PacketType.toString(a[0])).append(", ");
-        for (int i = 1; ; i++) {
-            b.append(a[i]);
-            if (i == iMax)
-                return b.append(']').toString();
-            b.append(", ");
-        }
-    }
-
-    private void log(String msg){
-        System.out.println((isClientSocket ? "Client:: " : "Server:: ") + msg);
-    }
-
-    private class SendPacket {
+    private class ResendPacket {
         public long sendTime;
         public byte[] data;
 
-        public SendPacket set(byte[] data){
+        public ResendPacket set(byte[] data){
             sendTime = System.currentTimeMillis();
             this.data = data;
             return this;
         }
+    }
 
+    static class DisconnectionPacket {
+
+        public static final int SELF_CLOSED = 1;
+        public static final int EVENT_RECEIVED = 2;
+        public static final int TIMED_OUT = 3;
+
+        public int type;
+        public String message;
+
+        public DisconnectionPacket(int type, String message) {
+            this.type = type;
+            this.message = message;
+        }
     }
 }

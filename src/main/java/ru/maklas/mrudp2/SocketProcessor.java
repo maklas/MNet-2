@@ -12,6 +12,6 @@ public interface SocketProcessor {
      * @param si iterator that helps with data manipulation
      * @param data data that's received
      */
-    void process(Socket sock, SocketIterator si, byte[] data);
+    void process(ByteSocket sock, SocketIterator si, byte[] data);
 
 }
