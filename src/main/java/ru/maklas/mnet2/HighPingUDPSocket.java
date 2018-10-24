@@ -1,5 +1,7 @@
 package ru.maklas.mnet2;
 
+import com.badlogic.gdx.utils.AtomicQueue;
+
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;

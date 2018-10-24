@@ -1,20 +1,20 @@
 package ru.maklas.mnet2;
 
-import java.util.ArrayList;
+import com.badlogic.gdx.utils.Array;
 
 /**
  * Used to send packets in a batch. All individual packets still must of size less than bufferSize.
  */
 public class ByteBatch {
 
-    final ArrayList<byte[]> array;
+    final Array<byte[]> array;
 
     public ByteBatch(int minSize) {
-        this.array = new ArrayList<byte[]>(minSize);
+        this.array = new Array<byte[]>(minSize);
     }
 
     public ByteBatch() {
-        this.array = new ArrayList<byte[]>();
+        this.array = new Array<byte[]>();
     }
 
     public void add(byte[] bytes){
@@ -26,7 +26,7 @@ public class ByteBatch {
     }
 
     public int size(){
-        return array.size();
+        return array.size;
     }
 
     public byte[] get(int i){
@@ -34,7 +34,7 @@ public class ByteBatch {
     }
 
     public void remove(int i){
-        array.remove(i);
+        array.removeIndex(i);
     }
 
     public int calculateSize(){

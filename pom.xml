@@ -10,10 +10,24 @@
     <packaging>jar</packaging>
 
     <dependencies>
+        <!--Kryo-->
         <dependency>
             <groupId>com.github.maklas</groupId>
             <artifactId>kryo</artifactId>
             <version>kryo-2.24.0-maklas</version>
+        </dependency>
+        <!--Gdx-->
+        <dependency>
+            <groupId>com.github.maklas</groupId>
+            <artifactId>gdx-fork-maklas</artifactId>
+            <version>1.9.8-6</version>
+        </dependency>
+        <!--JUnit test-->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.12</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -27,8 +41,8 @@
     </repositories>
 
     <properties>
-        <maven.compiler.source>1.6</maven.compiler.source>
-        <maven.compiler.target>1.6</maven.compiler.target>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -50,7 +64,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.1</version>
+                <version>3.6.1</version>
                 <executions>
                     <execution>
                         <id>default-testCompile</id>

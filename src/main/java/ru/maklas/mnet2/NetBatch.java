@@ -1,5 +1,8 @@
 package ru.maklas.mnet2;
 
+import com.badlogic.gdx.utils.Array;
+import ru.maklas.mnet2.serialization.Serializer;
+
 import java.util.ArrayList;
 
 /**
@@ -11,15 +14,15 @@ import java.util.ArrayList;
  */
 public class NetBatch {
 
-    private final ArrayList<Object> objects;
+    private final Array<Object> objects;
     private final ByteBatch byteBatch = new ByteBatch();
 
     public NetBatch(int minSize) {
-        objects = new ArrayList<Object>(minSize);
+        objects = new Array<Object>(minSize);
     }
 
     public NetBatch() {
-        this.objects = new ArrayList<Object>();
+        this.objects = new Array<Object>();
     }
 
     public void add(Object o){
@@ -27,7 +30,7 @@ public class NetBatch {
     }
 
     public int size(){
-        return objects.size();
+        return objects.size;
     }
 
     public Object get(int i){
@@ -35,11 +38,11 @@ public class NetBatch {
     }
 
     public Object remove(int i){
-        return objects.remove(i);
+        return objects.removeIndex(i);
     }
 
     public boolean remove(Object o){
-        return objects.remove(o);
+        return objects.removeValue(o, true);
     }
 
     public void clear(){

@@ -22,6 +22,10 @@ public class ServerResponse {
         this.response = response;
     }
 
+    public ServerResponse(ResponseType type) {
+        this.type = type;
+    }
+
     /**
      * Type of response. If type is {@link ResponseType#ACCEPTED} then socket is considered to be connected
      * and you can expect to receive data. Nothing happens in any other cases
@@ -32,6 +36,7 @@ public class ServerResponse {
 
     /**
      * Response data that server responded with. most likely not null if type is ACCEPTED or NOT_ACCEPTED
+     * Can be null
      */
     public Object getResponse() {
         return response;

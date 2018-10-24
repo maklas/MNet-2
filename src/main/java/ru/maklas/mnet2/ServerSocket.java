@@ -1,5 +1,10 @@
 package ru.maklas.mnet2;
 
+import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.AtomicQueue;
+import com.badlogic.gdx.utils.Supplier;
+import ru.maklas.mnet2.serialization.Serializer;
+
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
@@ -8,35 +13,39 @@ import java.net.SocketException;
 /**
  * Job of a server socket is to accept new connections and handle subsockets.
  */
-public class ByteServerSocket {
+public class ServerSocket {
 
     final UDPSocket udp;
-    private final ByteConnectionProcessor connectionProcessor;
-    private final SocketMap socketMap;
+    private final ServerAuthenticator authenticator;
+    final SocketMap socketMap;
     private AtomicQueue<ConnectionRequest> connectionRequests;
-    private DatagramPacket sendPacket; //update thread
-    private int inactivityTimeout = 15000;
-    private int bufferSize = 512;
-    private int pingFrequency = 2500;
-    private int resendFrequency = 125;
+    DatagramPacket sendPacket; //update thread
+    int inactivityTimeout = 15000;
+    int bufferSize = 512;
+    int pingFrequency = 2500;
+    int resendFrequency = 125;
+    Serializer serializer;
+    Supplier<Serializer> serializerSupplier;
 
-    public ByteServerSocket(int port, ByteConnectionProcessor connectionProcessor) throws SocketException {
-        this(new JavaUDPSocket(port), 512, 15000, 2500, 125, connectionProcessor);
+    public ServerSocket(int port, ServerAuthenticator authenticator, Supplier<Serializer> serializerSupplier) throws SocketException {
+        this(new JavaUDPSocket(port), 512, 15000, 2500, 125, authenticator, serializerSupplier);
     }
-    public ByteServerSocket(UDPSocket udp, int bufferSize, int inactivityTimeout, int pingFrequency, int resendFrequency, ByteConnectionProcessor connectionProcessor) {
+    public ServerSocket(UDPSocket udp, int bufferSize, int inactivityTimeout, int pingFrequency, int resendFrequency, ServerAuthenticator authenticator, Supplier<Serializer> serializerSupplier) {
         this.udp = udp;
         this.bufferSize = bufferSize;
         this.inactivityTimeout = inactivityTimeout;
         this.pingFrequency = pingFrequency;
         this.resendFrequency = resendFrequency;
-        this.connectionProcessor = connectionProcessor;
+        this.authenticator = authenticator;
         this.socketMap = new SocketMap();
         this.connectionRequests = new AtomicQueue<ConnectionRequest>(1000);
         this.sendPacket = new DatagramPacket(new byte[0], 0);
+        this.serializerSupplier = serializerSupplier;
+        this.serializer = serializerSupplier.get();
         new Thread(new Runnable() {
             @Override
             public void run() {
-                ByteServerSocket.this.run();
+                ServerSocket.this.run();
             }
         }).start();
     }
@@ -61,13 +70,18 @@ public class ByteServerSocket {
             byte type = buffer[0];
             if (len <= 5) continue;
 
-            ByteSocket mSocket = socketMap.get(packet);
+            SocketImpl mSocket = socketMap.get(packet);
             if (mSocket != null){
                 mSocket.receiveData(buffer, type, len);
             } else if (type == PacketType.connectionRequest){
-                byte[] userRequest = new byte[len - 1];
-                System.arraycopy(buffer, 1, userRequest, 0, len - 1);
-                connectionRequests.put(new ConnectionRequest(packet.getAddress(), packet.getPort(), userRequest));
+                Object req;
+                try {
+                    req = serializer.deserialize(buffer, 1, len - 1);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    req = null;
+                }
+                connectionRequests.put(new ConnectionRequest(packet.getAddress(), packet.getPort(), req));
             }
         }
     }
@@ -86,28 +100,14 @@ public class ByteServerSocket {
             if (socketMap.get(poll.address, poll.port) != null) continue; //Отбрасываем если кто-то уже коннектился и подтвердился.
 
             //Создаём полупустой сокет
-            ByteSocket socket = new ByteSocket(udp, poll.address, poll.port, bufferSize);
+            SocketImpl socket = new SocketImpl(udp, poll.address, poll.port, bufferSize);
             //Авторизация
-            Response<byte[]> response = connectionProcessor.acceptConnection(socket, poll.userRequest);
-            if (response == null) response = Response.refuse(new byte[0]);
-            else if (response.getResponseData() == null){
-                response.setResponseData(new byte[0]);
+            Connection conn = new Connection(this, socket, poll.userRequest);
+            authenticator.acceptConnection(conn);
+            if (!conn.isMadeChoice()){
+                conn.reject(null);
             }
 
-            //Отвечаем. Если accept, инициализируем и заносим сокет в список.
-            byte[] fullResponseData = buildFullResponsePacket(response);
-            if (response.accepted()){
-                socket.init(this, fullResponseData, inactivityTimeout, pingFrequency, resendFrequency);
-                socketMap.put(poll.address, poll.port, socket);
-            }
-            sendPacket.setAddress(poll.address);
-            sendPacket.setPort(poll.port);
-            sendPacket.setData(fullResponseData);
-            try {
-                udp.send(sendPacket);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
             poll = connectionRequests.poll();
         }
     }
@@ -119,9 +119,9 @@ public class ByteServerSocket {
         long now = System.currentTimeMillis();
         synchronized (socketMap){
             for (SocketMap.SocketWrap wrap : socketMap.sockets) {
-                ByteSocket socket = wrap.socket;
+                SocketImpl socket = wrap.socket;
                 if (now - socket.lastTimeReceivedMsg > socket.inactivityTimeout) {
-                    socket.queue.put(new ByteSocket.DisconnectionPacket(ByteSocket.DisconnectionPacket.TIMED_OUT, DCType.TIME_OUT));
+                    socket.queue.put(new SocketImpl.DisconnectionPacket(SocketImpl.DisconnectionPacket.TIMED_OUT, DCType.TIME_OUT));
                 } else {
                     if (socket.isConnected()) {
                         socket.checkResendAndPing();
@@ -132,14 +132,13 @@ public class ByteServerSocket {
     }
 
     /**
-     * builds fullResponse for Response<> object
+     * @return how many sockets are connected right now
      */
-    private byte[] buildFullResponsePacket(Response<byte[]> response) {
-        byte[] resp = new byte[response.getResponseData().length + 1];
-        resp[0] = response.accepted() ? PacketType.connectionResponseOk : PacketType.connectionResponseError;
-        System.arraycopy(response.getResponseData(), 0, resp, 1, response.getResponseData().length);
-        return resp;
+    public int getSize(){
+        return socketMap.size();
     }
+
+
 
     //***********//
     //* GET-SET *//
@@ -153,11 +152,11 @@ public class ByteServerSocket {
         return udp;
     }
 
-    public Array<ByteSocket> getSockets(){
-        return getSockets(new Array<ByteSocket>());
+    public Array<SocketImpl> getSockets(){
+        return getSockets(new Array<SocketImpl>());
     }
 
-    public Array<ByteSocket> getSockets(Array<ByteSocket> sockets){
+    public Array<SocketImpl> getSockets(Array<SocketImpl> sockets){
         sockets.clear();
         synchronized (socketMap){
             for (SocketMap.SocketWrap socket : socketMap.sockets) {
@@ -167,13 +166,13 @@ public class ByteServerSocket {
         return sockets;
     }
 
-    void removeMe(ByteSocket socket) {
+    void removeMe(SocketImpl socket) {
         socketMap.remove(socket);
     }
 
     public void close(){
-        Array<ByteSocket> sockets = getSockets();
-        for (ByteSocket socket : sockets) {
+        Array<SocketImpl> sockets = getSockets();
+        for (SocketImpl socket : sockets) {
             socket.close(DCType.SERVER_SHUTDOWN);
         }
         udp.close();
@@ -182,9 +181,9 @@ public class ByteServerSocket {
     private class ConnectionRequest {
         InetAddress address;
         int port;
-        byte[] userRequest;
+        Object userRequest;
 
-        public ConnectionRequest(InetAddress address, int port, byte[] userRequest) {
+        public ConnectionRequest(InetAddress address, int port, Object userRequest) {
             this.address = address;
             this.port = port;
             this.userRequest = userRequest;

@@ -1,8 +1,10 @@
 package ru.maklas.mnet2;
 
+import com.badlogic.gdx.utils.Array;
+
 /** A pool of objects that can be reused to avoid allocation.
  * @author Nathan Sweet */
-abstract class Pool<T> {
+abstract class FastPool<T> {
     /** The maximum number of objects that will be pooled. */
     public final int max;
     /** The highest number of free objects. Can be reset any time. */
@@ -11,17 +13,17 @@ abstract class Pool<T> {
     private final Array<T> freeObjects;
 
     /** Creates a pool with an initial capacity of 16 and no maximum. */
-    public Pool () {
+    public FastPool() {
         this(16, Integer.MAX_VALUE);
     }
 
     /** Creates a pool with the specified initial capacity and no maximum. */
-    public Pool (int initialCapacity) {
+    public FastPool(int initialCapacity) {
         this(initialCapacity, Integer.MAX_VALUE);
     }
 
     /** @param max The maximum number of free objects to store in this pool. */
-    public Pool (int initialCapacity, int max) {
+    public FastPool(int initialCapacity, int max) {
         freeObjects = new Array(false, initialCapacity);
         this.max = max;
     }

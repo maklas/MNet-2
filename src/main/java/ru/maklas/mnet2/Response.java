@@ -2,30 +2,29 @@ package ru.maklas.mnet2;
 
 /**
  * Package which is used to respond on ConnectionRequest.
- * @param <T> will be send with response
  */
-public class Response<T> {
+public class Response{
 
     final boolean accept;
-    T responseData;
+    Object responseData;
 
     /**
      * Respond with success flag
      * @param data Your response data
      */
-    public static <T> Response<T> accept(T data){
-        return new Response<T>(true, data);
+    public static Response accept(Object data){
+        return new Response(true, data);
     }
 
     /**
      * Respond with refuse flag
      * @param data Your response data
      */
-    public static <T> Response<T> refuse(T data){
-        return new Response<T>(false, data);
+    public static Response refuse(Object data){
+        return new Response(false, data);
     }
 
-    private Response(boolean accept, T responseData) {
+    private Response(boolean accept, Object responseData) {
         this.accept = accept;
         this.responseData = responseData;
     }
@@ -34,11 +33,11 @@ public class Response<T> {
         return accept;
     }
 
-    public T getResponseData() {
+    public Object getResponseData() {
         return responseData;
     }
 
-    public void setResponseData(T responseData) {
+    public void setResponseData(Object responseData) {
         this.responseData = responseData;
     }
 }

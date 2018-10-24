@@ -1,9 +1,8 @@
-package ru.maklas.mnet2.impl;
+package ru.maklas.mnet2.serialization;
 
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
-import ru.maklas.mnet2.Serializer;
 
 public class KryoSerializer implements Serializer {
 
@@ -17,6 +16,10 @@ public class KryoSerializer implements Serializer {
         output = new Output(bufferSize);
     }
 
+    public Kryo getKryo(){
+        return kryo;
+    }
+
     @Override
     public byte[] serialize(Object o) {
         synchronized (kryo){
@@ -24,6 +27,22 @@ public class KryoSerializer implements Serializer {
             kryo.writeClassAndObject(output, o);
             return output.toBytes();
         }
+    }
+
+    @Override
+    public byte[] serialize(Object o, int offset) {
+        synchronized (kryo){
+            output.setPosition(offset);
+            kryo.writeClassAndObject(output, o);
+            return output.toBytes();
+        }
+    }
+
+    @Override
+    public int serialize(Object o, byte[] buffer, int offset) {
+        byte[] serialized = serialize(o);
+        System.arraycopy(serialized, 0, buffer, offset, serialized.length);
+        return serialized.length;
     }
 
     @Override
@@ -38,22 +57,11 @@ public class KryoSerializer implements Serializer {
     }
 
     @Override
-    public byte[] serializeOff5(Object o) {
+    public Object deserialize(byte[] bytes, int offset, int length) {
+        if (length <= 0) return null;
         synchronized (kryo){
-            output.setPosition(5);
-            kryo.writeClassAndObject(output, o);
-            return output.toBytes();
+            input.setBuffer(bytes, offset, length);
+            return kryo.readClassAndObject(input);
         }
     }
-
-    @Override
-    public boolean useOffsetSerialization() {
-        return true;
-    }
-
-    public Kryo getKryo(){
-        return kryo;
-    }
-
-
 }

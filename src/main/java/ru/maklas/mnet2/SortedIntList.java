@@ -172,7 +172,7 @@ class SortedIntList<E> implements Iterable<SortedIntList.Node<E>> {
         public int index;
     }
 
-    static class NodePool<E> extends Pool<Node<E>> {
+    static class NodePool<E> extends FastPool<Node<E>> {
 
         @Override
         protected Node<E> newObject () {

@@ -1,5 +1,8 @@
 package ru.maklas.mnet2;
 
+import com.badlogic.gdx.utils.Array;
+import ru.maklas.mnet2.serialization.Serializer;
+
 import java.util.ArrayList;
 
 class PacketType {
@@ -80,9 +83,9 @@ class PacketType {
      * @return (byte[] batchRequest, int currentPosition)
      */
     public static Object[] buildSafeBatch(final int seq, byte settings, ByteBatch batch, final int pos, int bufferSize) {
-        ArrayList<byte[]> array = batch.array;
+        Array<byte[]> array = batch.array;
         int retSize = 6;
-        int batchSize = array.size();
+        int batchSize = array.size;
         int endIIncluded = pos;
         for (int i = pos; i < batchSize; i++) {
             int length = array.get(i).length;
@@ -124,6 +127,21 @@ class PacketType {
             int packetSize = extractShort(fullData, pos);
             ret[i] = new byte[packetSize];
             System.arraycopy(fullData, pos + 2, ret[i], 0, packetSize);
+            pos += packetSize + 2;
+        }
+        return ret;
+    }
+
+    /**
+     * Assumes that batch data is correct. Otherwise will throw Runtime exceptions
+     */
+    public static Object[] breakBatchDown(byte[] fullData, Serializer serializer){
+        int arrSize = fullData[5];
+        Object[] ret = new Object[arrSize];
+        int pos = 6;
+        for (int i = 0; i < arrSize; i++) {
+            int packetSize = extractShort(fullData, pos);
+            ret[i] = serializer.deserialize(fullData, pos + 2, packetSize);
             pos += packetSize + 2;
         }
         return ret;

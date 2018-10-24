@@ -1,5 +1,10 @@
 package ru.maklas.mnet2;
 
+import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.AtomicQueue;
+import com.badlogic.gdx.utils.Consumer;
+import ru.maklas.mnet2.serialization.Serializer;
+
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
@@ -9,14 +14,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static ru.maklas.mnet2.PacketType.*;
 
-public class ByteSocket {
+public class SocketImpl implements Socket{
 
     /**
      * Size of receiving packet queue. If it overflows, data might be lost.
      */
     public static int receivingQueueSize = 5000;
-    private static final byte[] zeroLengthByte = new byte[0];
-
 
     //Main useful stuff
     private final UDPSocket udp;
@@ -25,7 +28,8 @@ public class ByteSocket {
     private volatile int lastInsertedSeq = -1;
     volatile long lastTimeReceivedMsg;
     private final AtomicInteger seq = new AtomicInteger();
-    private Pool<ResendPacket> sendPacketPool = new Pool<ResendPacket>() {
+    private Serializer serializer;
+    private FastPool<ResendPacket> sendPacketPool = new FastPool<ResendPacket>() {
         @Override
         protected ResendPacket newObject() {
             return new ResendPacket();
@@ -65,23 +69,24 @@ public class ByteSocket {
     private boolean interrupted = false; //true if interrupted processing.
 
     //Utils
-    private ByteServerSocket server;
-    private Array<BytePingListener> pingListeners = new Array<BytePingListener>();
-    private Array<ByteDCListener> dcListeners = new Array<ByteDCListener>();
+    private ServerSocket server;
+    private Array<PingListener> pingListeners = new Array<PingListener>();
+    private Array<DCListener> dcListeners = new Array<DCListener>();
     private Object userData = null;
     private float currentPing;
     private long lastPingSendTime;
 
-    public ByteSocket(InetAddress address, int port) throws SocketException {
-        this(address, port, 512, 7000, 2500, 100);
+    public SocketImpl(InetAddress address, int port, Serializer serializer) throws SocketException {
+        this(address, port, 512, 7000, 2500, 100, serializer);
     }
 
-    public ByteSocket(InetAddress address, int port, int bufferSize, int inactivityTimeout, int pingFrequency, int resendFrequency) throws SocketException {
-        this(new JavaUDPSocket(), address, port, bufferSize, inactivityTimeout, pingFrequency, resendFrequency);
+    public SocketImpl(InetAddress address, int port, int bufferSize, int inactivityTimeout, int pingFrequency, int resendFrequency, Serializer serializer) throws SocketException {
+        this(new JavaUDPSocket(), address, port, bufferSize, inactivityTimeout, pingFrequency, resendFrequency, serializer);
     }
 
-    public ByteSocket(UDPSocket udp, InetAddress address, int port, int bufferSize, int inactivityTimeout, int pingFrequency, int resendFrequency) throws SocketException {
+    public SocketImpl(UDPSocket udp, InetAddress address, int port, int bufferSize, int inactivityTimeout, int pingFrequency, int resendFrequency, Serializer serializer) throws SocketException {
         this.state = SocketState.NOT_CONNECTED;
+        this.serializer = serializer;
         this.udp = udp;
         this.address = address;
         this.port = port;
@@ -97,7 +102,7 @@ public class ByteSocket {
     /**
      * ONLY USED BY SERVERS_SOCKET to construct new SUBSOCKET
      */
-    ByteSocket(UDPSocket udp, InetAddress address, int port, int bufferSize) {
+    SocketImpl(UDPSocket udp, InetAddress address, int port, int bufferSize) {
         this.state = SocketState.NOT_CONNECTED;
         this.udp = udp;
         this.address = address;
@@ -109,7 +114,8 @@ public class ByteSocket {
     /**
      * Initialization done by server after Socket was accepted
      */
-    void init(ByteServerSocket serverSocket, byte[] fullResponseData, int inactivityTimeout, int pingFrequency, int resendFrequency) {
+    void init(ServerSocket serverSocket, byte[] fullResponseData, int inactivityTimeout, int pingFrequency, int resendFrequency, Serializer serializer) {
+        this.serializer = serializer;
         this.state = SocketState.CONNECTED;
         this.server = serverSocket;
         this.lastTimeReceivedMsg = System.currentTimeMillis();
@@ -146,17 +152,31 @@ public class ByteSocket {
         this.pingResponsePacket.setPort(port);
     }
 
-    /**
-     * <p>Tries to establish connection to the server with custom user request.
-     * Blocks for specified time until connected or not answered. Min block is 1 second</p>
-     * @param timeout Blocking time in milliseconds
-     * @param data Custom data (request data). Can be anything. For example login + password for validation. Maximum size is bufferSize - 9
-     * @return Connection response containing connection {@link ResponseType result} and response data as byte[]
-     * @throws IOException In case of any problem with underlying UDP.
-     */
-    public ConnectionResponse connect(byte[] data, int timeout) throws IOException {
+    @Override
+    public void connectAsync(final Object request, final int timeout, final Consumer<ServerResponse> handler) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ServerResponse connect = connect(request, timeout);
+                    handler.accept(connect);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    handler.accept(new ServerResponse(ResponseType.WRONG_STATE, null));
+                }
+            }
+        }).start();
+    }
+
+    @Override
+    public ServerResponse connect(Object data, int timeout) throws IOException {
+        byte[] req = serializer.serialize(data);
+        return connect(req, timeout);
+    }
+
+    private ServerResponse connect(byte[] data, int timeout) throws IOException {
         if (!isClientSocket || state != SocketState.NOT_CONNECTED)
-            return new ConnectionResponse(ResponseType.WRONG_STATE);
+            return new ServerResponse(ResponseType.WRONG_STATE);
         state = SocketState.CONNECTING;
 
         udp.setReceiveTimeout(timeout);
@@ -180,7 +200,7 @@ public class ByteSocket {
         //Make request
         sendBuffer[0] = PacketType.connectionRequest;
         System.arraycopy(data, 0, sendBuffer, 1, data.length);
-        long beforeFirstRequest = System.currentTimeMillis();
+        long startTime = System.currentTimeMillis();
 
         //send until all attempts are over or we get response.
         udp.setReceiveTimeout(wait);
@@ -192,13 +212,17 @@ public class ByteSocket {
             } catch (IOException e) {
                 if (udp.isClosed()) {
                     state = SocketState.CLOSED;
-                    return new ConnectionResponse(ResponseType.WRONG_STATE);
+                    return new ServerResponse(ResponseType.WRONG_STATE);
                 } else {
                     if (attempts-- == 0) {
                         state = SocketState.NOT_CONNECTED;
-                        return new ConnectionResponse(ResponseType.NO_RESPONSE);
+                        return new ServerResponse(ResponseType.NO_RESPONSE);
                     }
                 }
+            }
+            byte pType = receiveBuffer[0];
+            if (pType != PacketType.connectionResponseOk && pType != PacketType.connectionResponseError){
+                if (System.currentTimeMillis() - startTime > timeout) break;
             }
         }
 
@@ -206,36 +230,74 @@ public class ByteSocket {
 
         if (packetType == PacketType.connectionResponseError){
             state = SocketState.NOT_CONNECTED;
-            return new ConnectionResponse(ResponseType.REJECTED);
+            return new ServerResponse(ResponseType.REJECTED);
         }
         if (packetType != PacketType.connectionResponseOk){
             state = SocketState.NOT_CONNECTED;
-            return new ConnectionResponse(ResponseType.NO_RESPONSE);
+            return new ServerResponse(ResponseType.NO_RESPONSE);
         }
 
-        byte[] responseData = new byte[receivePacket.getLength() - 1];
-        System.arraycopy(receiveBuffer, 1, responseData, 0, responseData.length);
+        int len = receivePacket.getLength();
+        Object responseData;
+        if (len == 5){
+            responseData = null;
+        } else {
+            try {
+                responseData = serializer.deserialize(receiveBuffer, 5, len - 5);
+            } catch (Exception e) {
+                e.printStackTrace();
+                responseData = null;
+            }
+        }
         udp.setReceiveTimeout(inactivityTimeout);
         state = SocketState.CONNECTED;
         this.lastTimeReceivedMsg = System.currentTimeMillis();
         lastPingSendTime = lastTimeReceivedMsg;
-        currentPing = (lastTimeReceivedMsg - beforeFirstRequest);
+        currentPing = (lastTimeReceivedMsg - startTime);
         launchReceiveThread();
-        return new ConnectionResponse(ResponseType.ACCEPTED, responseData);
+        return new ServerResponse(ResponseType.ACCEPTED, responseData);
     }
 
     //***********//
     //* ACTIONS *//
     //***********//
 
-    /**
-     * <p>Sends data to connected socket if current state == CONNECTED</p>
-     * <p>This method sends data as fast as possible to a socket on the other end and <b>does not provide reliability nor ordering</b>.
-     * this method uses plain UDP, so packet might not be delivered, or delivered in wrong order.
-     * </p>
-     * @param data Data to be send. Max size == bufferSize - 5. Data will be copied, so can be changed after method returns
-     */
-    public void sendUnreliable(byte[] data){
+    public void sendUnreliable(Object o){
+        if (isConnected()) {
+            sendBuffer[0] = unreliable;
+            int size = serializer.serialize(o, sendBuffer, 1);
+            sendPacket.setLength(size + 1);
+            try {
+                udp.send(sendPacket);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public void send(Object o){
+        if (isConnected()) {
+            byte[] fullPackage = serializer.serialize(o, 5);
+            int seq = this.seq.getAndIncrement();
+            fullPackage[0] = reliableRequest;
+            PacketType.putInt(fullPackage, seq, 1);
+            saveRequest(seq, fullPackage);
+            sendData(fullPackage);
+        }
+    }
+
+    @Override
+    public void sendSerialized(byte[] data) {
+        if (isConnected()) {
+            int seq = this.seq.getAndIncrement();
+            byte[] fullPackage = build5byte(reliableRequest, seq, data);
+            saveRequest(seq, fullPackage);
+            sendData(fullPackage);
+        }
+    }
+
+    @Override
+    public void sendSerUnrel(byte[] data) {
         if (isConnected()) {
             sendBuffer[0] = unreliable;
             System.arraycopy(data, 0, sendBuffer, 1, data.length);
@@ -247,35 +309,9 @@ public class ByteSocket {
             }
         }
     }
-    /**
-     * <p>Sends data to connected socket if current state == CONNECTED</p>
-     * <p>This method provides reliable, and ordered byte[] sending. Packet will be delivered in the order of sending.
-     * Packets will be resent over and over until socket on the other end received it or disconnection occurs
-     * </p>
-     *
-     * @param data Data to be send. Max size == bufferSize - 5. Can be changed after this method is finished, since creates copy
-     */
-    public void send(byte[] data){
-        if (isConnected()) {
-            int seq = this.seq.getAndIncrement();
-            byte[] fullPackage = build5byte(reliableRequest, seq, data);
-            saveRequest(seq, fullPackage);
-            sendData(fullPackage);
-        }
-    }
-    /**
-     * <p>Sends data to connected socket in a batch if current state == CONNECTED</p>
-     * <p>This method provides reliable, and ordered byte[] sending. Packet will be delivered in the order of sending.
-     * So recommended to use this method from the same thread each time.
-     * Packets will be resent over and over until socket on the other end received it or disconnection occurs
-     * </p>
-     * <p>
-     *     summary size of bytes in batch can be bigger than bufferSize, however all of byte arrays that are in the batch
-     *     must be less than bufferSize!
-     * </p>
-     * @param batch Data to be sent
-     */
-    public void sendBatch(ByteBatch batch){
+
+    @Override
+    public void sendBatch(NetBatch batch){
         if (isConnected()) {
             int size = batch.size();
             switch (size) {
@@ -291,7 +327,7 @@ public class ByteSocket {
             int i = 0;
             while (i < size) {
                 int seq = this.seq.getAndIncrement();
-                Object[] tuple = buildSafeBatch(seq, PacketType.batch, batch, i, bufferSize);
+                Object[] tuple = buildSafeBatch(seq, PacketType.batch, batch.convertAndGet(serializer), i, bufferSize);
                 byte[] fullPackage = (byte[]) tuple[0];
                 i = ((Integer) tuple[1]);
                 saveRequest(seq, fullPackage);
@@ -300,19 +336,8 @@ public class ByteSocket {
         }
     }
 
-    /**
-     * <p>Receives any pending data onto the {@link ByteSocketProcessor}.
-     * <b>must not be called by different threads or recursibely at the same time</b> or will throw an Exception.
-     * Works better if you implement this method by one of your classes and pass the same instance every time, rather than instantiating
-     * </p>
-     * <p>If socket on the other end disconnects, this method might receive this Disconnection event and will trigger DClisteners.
-     * </p>
-     *
-     * @param processor Instance that is going to receive all pending packets in the order which they were sent.
-     *                  Unreliable packets will also be consumed by this SocketProcessor. Receiving of the packets
-     *                  can be stopped by calling {@link ByteSocket#stop()}
-     */
-    public void update(ByteSocketProcessor processor) {
+    @Override
+    public void update(SocketProcessor processor) {
         if (isConnected()) {
             processData(processor);
             checkResendAndPing();
@@ -323,14 +348,17 @@ public class ByteSocket {
     //* GET-SET *//
     //***********//
 
+    @Override
     public boolean isClosed() {
         return state == SocketState.CLOSED;
     }
 
-    public void close(){
-        close(DCType.CLOSED);
+    @Override
+    public boolean close(){
+        return close(DCType.CLOSED);
     }
 
+    @Override
     public boolean close(String msg){
         SocketState state = this.state;
 
@@ -349,61 +377,80 @@ public class ByteSocket {
         return true;
     }
 
+    @Override
     public UDPSocket getUdp() {
         return udp;
     }
 
+    @Override
+    public int getLocalPort() {
+        return udp.getLocalPort();
+    }
+
+    @Override
     public SocketState getState() {
         return state;
     }
 
+    @Override
     public void stop() {
         interrupted = true;
     }
 
+    @Override
     public boolean isProcessing() {
         return processing;
     }
 
-    public void addPingListener(BytePingListener pl){
+    @Override
+    public void addPingListener(PingListener pl){
         pingListeners.add(pl);
     }
 
-    public void removePingListener(BytePingListener pl){
+    @Override
+    public void removePingListener(PingListener pl){
         pingListeners.removeValue(pl, true);
     }
 
-    public void addDcListener(ByteDCListener dl){
+    @Override
+    public void addDcListener(DCListener dl){
         dcListeners.add(dl);
     }
 
-    public void removeDcListener(ByteDCListener dl){
+    @Override
+    public void removeDcListener(DCListener dl){
         dcListeners.removeValue(dl, true);
     }
 
+    @Override
     public void removeAllListeners(){
         pingListeners.clear();
         dcListeners.clear();
     }
 
+    @Override
     public boolean isConnected(){
         return state == SocketState.CONNECTED;
     }
 
+    @Override
     public float getPing() {
         return currentPing;
     }
 
+    @Override
     public <T> T getUserData() {
         return (T) userData;
     }
 
+    @Override
     public <T> T setUserData(Object userData) {
         T oldData = (T) this.userData;
         this.userData = userData;
         return oldData;
     }
 
+    @Override
     public void setPingFrequency(int millis){
         this.pingCD = millis;
     }
@@ -412,13 +459,16 @@ public class ByteSocket {
         return bufferSize;
     }
 
+    @Override
     public InetAddress getRemoteAddress() {
         return address;
     }
 
+    @Override
     public int getRemotePort() {
         return port;
     }
+
 
 
 
@@ -426,14 +476,25 @@ public class ByteSocket {
     //* CODE *//
     //********//
 
+    private void deserializeAndPut(byte[] data, int offset, int length){
+        Object obj;
+        try {
+            obj = serializer.deserialize(data, offset, length);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return;
+        }
+        if (obj != null)
+            queue.put(obj);
+    }
 
     private void launchReceiveThread() {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                byte[] receiveBuffer = ByteSocket.this.receiveBuffer;
-                DatagramPacket packet = ByteSocket.this.receivePacket;
-                UDPSocket udp = ByteSocket.this.udp;
+                byte[] receiveBuffer = SocketImpl.this.receiveBuffer;
+                DatagramPacket packet = SocketImpl.this.receivePacket;
+                UDPSocket udp = SocketImpl.this.udp;
                 boolean keepRunning = true;
                 while (keepRunning) {
                     try {
@@ -467,24 +528,28 @@ public class ByteSocket {
         switch (type){
             case reliableRequest:
                 sendAck(seq);
-                byte[] bytes1 = new byte[length - 5];
-                System.arraycopy(fullPacket, 5, bytes1, 0, length - 5);
                 int expectedSeq1 = lastInsertedSeq + 1;
                 if (seq == expectedSeq1){
                     lastInsertedSeq = seq;
-                    queue.put(bytes1);
+                    deserializeAndPut(fullPacket, 5, length - 5);
                     updateReceiveOrderQueue();
                 } else if (seq > expectedSeq1){
-                    addToWaitings(seq, bytes1);
+                    Object obj;
+                    try {
+                        obj = serializer.deserialize(fullPacket, 5, length - 5);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        break;
+                    }
+                    if (obj != null)
+                        addToWaitings(seq, obj);
                 }
                 break;
             case reliableAck:
                 removeFromWaitingForAck(seq);
                 break;
             case unreliable:
-                byte[] bytes2 = new byte[length - 1];
-                System.arraycopy(fullPacket, 1, bytes2, 0, length - 1);
-                queue.put(bytes2);
+                deserializeAndPut(fullPacket, 1, length - 1);
                 break;
             case batch:
                 sendAck(seq);
@@ -494,16 +559,16 @@ public class ByteSocket {
                 }
 
                 try {
-                    byte[][] batchPackets;
+                    Object[] batchPackets;
                     if (seq == expectedSeq2){
                         lastInsertedSeq = seq;
-                        batchPackets = PacketType.breakBatchDown(fullPacket);
-                        for (byte[] batchPacket : batchPackets) {
+                        batchPackets = PacketType.breakBatchDown(fullPacket, serializer);
+                        for (Object batchPacket : batchPackets) {
                             queue.put(batchPacket);
                         }
                         updateReceiveOrderQueue();
-                    } else if (seq > expectedSeq2){
-                        batchPackets = PacketType.breakBatchDown(fullPacket);
+                    } else {
+                        batchPackets = PacketType.breakBatchDown(fullPacket, serializer);
                         addToWaitings(seq, batchPackets);
                     }
                 } catch (Exception ignore){}
@@ -518,14 +583,14 @@ public class ByteSocket {
                     lastInsertedSeq = seq;
                     updateReceiveOrderQueue();
                 } else if (expectSeq3 < seq){
-                    addToWaitings(seq, zeroLengthByte);
+                    addToWaitings(seq, new PingPacket(0));
                 }
                 break;
             case pingResponse:
                 final long startingTime = extractLong(fullPacket, 5);
                 boolean removed = removeFromWaitingForAck(seq);
                 if (removed){
-                    float ping = ((float) (System.nanoTime() - startingTime))/1000000f;
+                    PingPacket ping = new PingPacket(((float) (System.nanoTime() - startingTime))/1000000f);
                     queue.put(ping);
                 }
                 break;
@@ -564,7 +629,7 @@ public class ByteSocket {
     /**
      * Добавить в очередь на зачисление в queue.
      * @param seq номер
-     * @param userData byte[] - пакет, byte[][] - Батч пакет, byte[0] - пинг.
+     * @param userData Object - пакет, Object[] - Батч пакет, PingPacket - пинг.
      */
     private void addToWaitings(int seq, Object userData) {
         receivingSortQueue.insert(seq, userData);
@@ -581,7 +646,7 @@ public class ByteSocket {
         return false;
     }
 
-    private void processData(ByteSocketProcessor processor){
+    private void processData(SocketProcessor processor){
         if (processing){
             throw new ConcurrentModificationException("Can't be processed by 2 threads at the same time");
         }
@@ -593,12 +658,11 @@ public class ByteSocket {
 
             Object poll = queue.poll();
             while (poll != null){
-                if (poll instanceof byte[]){
-                    processor.process(this, (byte[]) poll);
-                } else if (poll instanceof Float) {
-                    currentPing = (Float) poll;
-                    for (BytePingListener pingListener : pingListeners) {
-                        pingListener.onPingChange(this, currentPing);
+
+                if (poll instanceof PingPacket){
+                    currentPing = ((PingPacket) poll).newPing;
+                    for (PingListener pingListener : pingListeners) {
+                        pingListener.pingChanged(this, currentPing);
                     }
                 } else if (poll instanceof DisconnectionPacket){
                     interrupted = true;
@@ -618,6 +682,8 @@ public class ByteSocket {
 
                     notifyDcListenersAndRemoveAll(dcPacket.message);
                     break;
+                } else {
+                    processor.process(this, poll);
                 }
                 if (interrupted){
                     break;
@@ -643,7 +709,7 @@ public class ByteSocket {
     }
 
     void notifyDcListenersAndRemoveAll(String msg){
-        for (ByteDCListener dcListener : dcListeners) {
+        for (DCListener dcListener : dcListeners) {
             dcListener.socketClosed(this, msg);
         }
         dcListeners.clear();
@@ -686,15 +752,14 @@ public class ByteSocket {
 
         while (mayBeData != null) {
             this.lastInsertedSeq = expectedSeq;
-            if (mayBeData instanceof byte[]){
-                if (((byte[]) mayBeData).length > 0) { // Если в очереди не пинг
-                    this.queue.put(mayBeData);
+            if (mayBeData instanceof PingPacket) continue;
+
+            if (mayBeData instanceof Object[]){
+                for (Object packet : ((Object[]) mayBeData)) {
+                    this.queue.put(packet);
                 }
             } else {
-                byte[][] batch = (byte[][]) mayBeData;
-                for (byte[] bytes : batch) {
-                    this.queue.put(bytes);
-                }
+                this.queue.put(mayBeData);
             }
             expectedSeq = lastInsertedSeq + 1;
             mayBeData = queue.remove(expectedSeq);
@@ -721,6 +786,18 @@ public class ByteSocket {
         sendData(fullPackage);
     }
 
+    @Override
+    public String toString() {
+        return "{" +
+                "state=" + state +
+                ", ping=" + currentPing +
+                ", address=" + address +
+                ", port=" + port +
+                ", processing=" + processing +
+                ", userData=" + userData +
+                '}';
+    }
+
     private class ResendPacket {
         public long sendTime;
         public byte[] data;
@@ -744,6 +821,14 @@ public class ByteSocket {
         public DisconnectionPacket(int type, String message) {
             this.type = type;
             this.message = message;
+        }
+    }
+
+    private static class PingPacket {
+        float newPing;
+
+        public PingPacket(float newPing) {
+            this.newPing = newPing;
         }
     }
 }
