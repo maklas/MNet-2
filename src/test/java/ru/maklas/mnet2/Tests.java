@@ -46,9 +46,13 @@ public class Tests implements ServerAuthenticator {
             System.out.println("Responding with " + response);
             Socket socket = conn.accept(response);
 
+            NetBatch batch = new NetBatch();
+
             for (int i = 0; i < 1000; i++) {
-                socket.send(new UpdateObject("asdfasfcrawfrsfssfarfaa", 100, 200, 300));
+                batch.add(new UpdateObject("asdfasf=rawfssfarfaa", 100, 200, i));
             }
+
+            socket.sendBatch(batch);
         }
     }
 }

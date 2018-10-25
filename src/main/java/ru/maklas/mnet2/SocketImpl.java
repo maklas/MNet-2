@@ -324,10 +324,11 @@ public class SocketImpl implements Socket{
 
             int bufferSize = this.bufferSize;
 
+            ByteBatch bb = batch.convertAndGet(serializer);
             int i = 0;
             while (i < size) {
                 int seq = this.seq.getAndIncrement();
-                Object[] tuple = buildSafeBatch(seq, PacketType.batch, batch.convertAndGet(serializer), i, bufferSize);
+                Object[] tuple = buildSafeBatch(seq, PacketType.batch, bb, i, bufferSize);
                 byte[] fullPackage = (byte[]) tuple[0];
                 i = ((Integer) tuple[1]);
                 saveRequest(seq, fullPackage);

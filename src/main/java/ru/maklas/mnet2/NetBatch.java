@@ -47,7 +47,6 @@ public class NetBatch {
 
     public void clear(){
         objects.clear();
-        byteBatch.clear();
     }
 
     /**
@@ -55,6 +54,7 @@ public class NetBatch {
      */
     public ByteBatch convertAndGet(Serializer serializer){
         ByteBatch byteBatch = this.byteBatch;
+        byteBatch.clear();
         for (Object o : objects) {
             byteBatch.add(serializer.serialize(o));
         }
@@ -65,6 +65,7 @@ public class NetBatch {
      * Used only for testing batch byte[]-sizes!
      */
     public int testCalculateSize(Serializer serializer){
+        this.byteBatch.clear();
         return convertAndGet(serializer).calculateSize();
     }
 
