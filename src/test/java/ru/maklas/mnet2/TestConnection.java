@@ -33,7 +33,12 @@ public class TestConnection implements ServerAuthenticator {
 
         AtomicInteger counter = new AtomicInteger(0);
         for (int i = 0; i < 200; i++) {
-            client.update((sock, o) -> Log.trace("Client received " + (counter.getAndIncrement()) + ":  " + o));
+            client.update(new SocketProcessor() {
+                @Override
+                public void process(Socket sock, Object o) {
+                    Log.trace("Client received " + (counter.getAndIncrement()) + ":  " + o);
+                }
+            });
             Thread.sleep(50);
         }
 

@@ -31,7 +31,12 @@ public class TestReliability implements ServerAuthenticator{
 
         AtomicInteger counter = new AtomicInteger(0);
         for (int i = 0; i < 200; i++) {
-            client.update((sock, o) -> Assert.assertEquals(counter.getAndIncrement(), ((UpdateObject) o).getForce()));
+            client.update(new SocketProcessor() {
+                @Override
+                public void process(Socket sock, Object o) {
+                    Assert.assertEquals(counter.getAndIncrement(), ((UpdateObject) o).getForce());
+                }
+            });
             Thread.sleep(100);
         }
 

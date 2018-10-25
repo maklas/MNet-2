@@ -1,6 +1,7 @@
 package ru.maklas.mnet2;
 
 import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.Consumer;
 import com.badlogic.gdx.utils.Supplier;
 import ru.maklas.mnet2.objects.MySerializer;
 import ru.maklas.mnet2.serialization.Serializer;
@@ -15,20 +16,29 @@ public class TestUtils {
 
 
     public static void startUpdating(ServerSocket serverSocket, int freq){
-        startUpdating(serverSocket, freq, (s, o) -> {});
+        startUpdating(serverSocket, freq, new SocketProcessor() {
+            @Override
+            public void process(Socket s, Object o) {
+            }
+        });
     }
 
     public static void startUpdating(ServerSocket serverSocket, int freq, SocketProcessor processor){
-        new Thread(() -> {
-            Array<Socket> sockets = new Array<>();
-            while (!serverSocket.isClosed()){
-                serverSocket.update();
-                serverSocket.getSockets(sockets);
-                sockets.foreach(s -> s.update(processor));
-                try {
-                    Thread.sleep(freq);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Array<Socket> sockets = new Array<>();
+                while (!serverSocket.isClosed()) {
+                    serverSocket.update();
+                    serverSocket.getSockets(sockets);
+                    for (Socket socket : sockets) {
+                        socket.update(processor);
+                    }
+                    try {
+                        Thread.sleep(freq);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                 }
             }
         }).start();

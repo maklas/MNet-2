@@ -25,9 +25,12 @@ public class TestSerializedSend implements ServerAuthenticator{
         AtomicInteger received = new AtomicInteger();
 
         ServerSocket serverSocket = TestUtils.newServerSocket(TestUtils.udp(port, 200, 50), this);
-        TestUtils.startUpdating(serverSocket, 16, (s, o) -> {
-            received.getAndIncrement();
-            System.out.println(o);
+        TestUtils.startUpdating(serverSocket, 16, new SocketProcessor() {
+            @Override
+            public void process(Socket s, Object o) {
+                received.getAndIncrement();
+                System.out.println(o);
+            }
         });
 
         Socket client = new SocketImpl(InetAddress.getLocalHost(), port, TestUtils.serializerSupplier.get());

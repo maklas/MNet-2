@@ -30,9 +30,12 @@ public class TestSocketStates implements ServerAuthenticator{
 
 
         UDPSocket silentSocket = new JavaUDPSocket(port);
-        new Thread(() -> {
-            TestUtils.sleep(500);
-            assertEquals(SocketState.CONNECTING, client.getState());
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                TestUtils.sleep(500);
+                assertEquals(SocketState.CONNECTING, client.getState());
+            }
         });
         client.connect(new ConnectionRequest(), 1000);
         silentSocket.close();
@@ -40,7 +43,12 @@ public class TestSocketStates implements ServerAuthenticator{
 
 
         ServerSocket serverSocket = TestUtils.newServerSocket(TestUtils.udp(port, 0, 0), this);
-        TestUtils.startUpdating(serverSocket, 16, (s, o) -> System.out.println(o));
+        TestUtils.startUpdating(serverSocket, 16, new SocketProcessor() {
+            @Override
+            public void process(Socket s, Object o) {
+                System.out.println(o);
+            }
+        });
 
 
 
@@ -50,12 +58,22 @@ public class TestSocketStates implements ServerAuthenticator{
         assertEquals(ResponseType.ACCEPTED, response.getType());
         assertNotNull(response.getResponse());
         assertEquals(SocketState.CONNECTED, client.getState());
-        client.addDcListener((s, m) -> dcClientCalled.set(true));
+        client.addDcListener(new DCListener() {
+            @Override
+            public void socketClosed(Socket s, String m) {
+                dcClientCalled.set(true);
+            }
+        });
 
         Array<Socket> sockets = serverSocket.getSockets();
         assertEquals(1, sockets.size);
         Socket subSocket = sockets.get(0);
-        subSocket.addDcListener((s, m) -> dcSubCalled.set(true));
+        subSocket.addDcListener(new DCListener() {
+            @Override
+            public void socketClosed(Socket s, String m) {
+                dcSubCalled.set(true);
+            }
+        });
         assertEquals(SocketState.CONNECTED, subSocket.getState());
         assertTrue(client.isConnected());
         assertFalse(client.isClosed());
