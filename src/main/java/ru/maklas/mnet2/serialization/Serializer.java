@@ -26,7 +26,7 @@ public interface Serializer {
     int serialize(Object o, byte[] buffer, int offset);
 
     /**
-     * Deserialize object from byte[]. Throw Runtime exception to notify that this byte[] can't be serialized.
+     * Deserialize object from byte[]. Throw Runtime exception to receive that this byte[] can't be serialized.
      * It will print stack trace on System.err
      * @param bytes serialzied object
      * @return deserialized instance
@@ -34,7 +34,7 @@ public interface Serializer {
     Object deserialize(byte[] bytes);
 
     /**
-     * Deserialize object from byte[]. Throw Runtime exception to notify that this byte[] can't be serialized.
+     * Deserialize object from byte[]. Throw Runtime exception to receive that this byte[] can't be serialized.
      * It will print stack trace on System.err
      * @param bytes serialzied object
      * @param offset serialization start
