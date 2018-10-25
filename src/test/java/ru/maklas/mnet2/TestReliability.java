@@ -16,7 +16,7 @@ public class TestReliability implements ServerAuthenticator{
     public static final int port = 9001;
 
     @Test
-    public void name() throws Exception {
+    public void reliabilityTest() throws Exception {
         SocketImpl.receivingQueueSize = 10000;
 
         ServerSocket serverSocket = TestUtils.newServerSocket(TestUtils.udp(port, 200, 50), this);
