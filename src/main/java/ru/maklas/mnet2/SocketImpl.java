@@ -8,6 +8,7 @@ import ru.maklas.mnet2.serialization.Serializer;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
+import java.net.PortUnreachableException;
 import java.net.SocketException;
 import java.util.ConcurrentModificationException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -208,11 +209,12 @@ public class SocketImpl implements Socket{
             try {
                 udp.send(sendPacket);
                 udp.receive(receivePacket);
-                break;
             } catch (IOException e) {
                 if (udp.isClosed()) {
                     state = SocketState.CLOSED;
                     return new ServerResponse(ResponseType.WRONG_STATE);
+                } else if (e instanceof PortUnreachableException) {
+                    return new ServerResponse(ResponseType.NO_RESPONSE, null);
                 } else {
                     if (attempts-- == 0) {
                         state = SocketState.NOT_CONNECTED;
@@ -221,8 +223,8 @@ public class SocketImpl implements Socket{
                 }
             }
             byte pType = receiveBuffer[0];
-            if (pType != PacketType.connectionResponseOk && pType != PacketType.connectionResponseError){
-                if (System.currentTimeMillis() - startTime > timeout) break;
+            if (pType == connectionResponseOk || pType == connectionResponseError || System.currentTimeMillis() - startTime > timeout){
+                break;
             }
         }
 
@@ -311,7 +313,7 @@ public class SocketImpl implements Socket{
     }
 
     @Override
-    public void sendBatch(NetBatch batch){
+    public void send(NetBatch batch){
         if (isConnected()) {
             int size = batch.size();
             switch (size) {
@@ -470,8 +472,10 @@ public class SocketImpl implements Socket{
         return port;
     }
 
-
-
+    @Override
+    public Serializer getSerializer() {
+        return serializer;
+    }
 
     //********//
     //* CODE *//
@@ -599,7 +603,9 @@ public class SocketImpl implements Socket{
                 if (!isClientSocket){
                     try {
                         udp.send(serverConnectionResponse);
-                    } catch (IOException ignore) {}
+                    } catch (IOException ignore) {
+                        ignore.printStackTrace();
+                    }
                 }
                 break;
             case connectionResponseOk:

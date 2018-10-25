@@ -3,11 +3,9 @@ package ru.maklas.mnet2;
 import com.badlogic.gdx.utils.Array;
 import ru.maklas.mnet2.serialization.Serializer;
 
-import java.util.ArrayList;
-
 /**
  * <p>You can send your data via MNet in batches. Just create new instance and put all serializable objects inside of it,
- * then send with {@link Socket#sendBatch(NetBatch)}. Receiver will get them as if they all were sent with
+ * then send with {@link Socket#send(NetBatch)}. Receiver will get them as if they all were sent with
  * {@link Socket#send(Object)}.
  * <p>NetBatch is reusable. Just call clear() after sending it and you can fill it up again.
  * Be careful. If you try to send too much data it won't fit with

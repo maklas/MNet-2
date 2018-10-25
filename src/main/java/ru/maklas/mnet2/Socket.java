@@ -1,6 +1,7 @@
 package ru.maklas.mnet2;
 
 import com.badlogic.gdx.utils.Consumer;
+import ru.maklas.mnet2.serialization.Serializer;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -57,7 +58,7 @@ public interface Socket {
      *
      * @param batch Batch to be send.
      */
-    void sendBatch(NetBatch batch);
+    void send(NetBatch batch);
 
 
     /**
@@ -142,6 +143,7 @@ public interface Socket {
      */
     boolean isClosed();
 
+    Serializer getSerializer();
 
     /**
      * Same as {@link #send(Object)}.

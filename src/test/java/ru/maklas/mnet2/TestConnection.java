@@ -1,5 +1,6 @@
 package ru.maklas.mnet2;
 
+import org.junit.Assert;
 import org.junit.Test;
 import ru.maklas.mnet2.objects.ConnectionRequest;
 import ru.maklas.mnet2.objects.ConnectionResponse;
@@ -8,30 +9,41 @@ import ru.maklas.mnet2.objects.UpdateObject;
 import java.net.InetAddress;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class Tests implements ServerAuthenticator {
+import static org.junit.Assert.*;
+
+public class TestConnection implements ServerAuthenticator {
 
     public static final int port = 9000;
 
     @Test
     public void testConnections() throws Exception {
-        ServerSocket serverSocket = new ServerSocket(port, this, TestUtils.serializerSupplier);
-        TestUtils.startUpdating(serverSocket, 16);
 
+        ServerSocket serverSocket = TestUtils.newServerSocket(TestUtils.udp(port, 250, 80), this);
+        TestUtils.startUpdating(serverSocket, 16);
 
         Socket client = new SocketImpl(InetAddress.getLocalHost(), port, TestUtils.serializerSupplier.get());
 
-        System.out.println(client.connect(new ConnectionRequest("maklas", "123", 22, true), 5000));
+        Log.trace("Connecting...");
+        ServerResponse response = client.connect(new ConnectionRequest("maklas", "123", 22, true), 15000);
+        Log.trace(response.toString());
+
+        assertEquals(ResponseType.ACCEPTED, response.getType());
+        assertNotNull(response.getResponse());
+        assertEquals("Welcome, maklas!", ((ConnectionResponse) response.getResponse()).getWelcome());
 
         AtomicInteger counter = new AtomicInteger(0);
-        for (int i = 0; i < 100; i++) {
-            client.update((sock, o) -> System.out.println("Client received " + (counter.getAndIncrement()) + ":  " + o));
-            Thread.sleep(16);
+        for (int i = 0; i < 200; i++) {
+            client.update((sock, o) -> Log.trace("Client received " + (counter.getAndIncrement()) + ":  " + o));
+            Thread.sleep(50);
         }
+
+
+        Log.trace("Checking result...");
+        assertEquals(1000, counter.get());
 
         if (client.isConnected()){
             client.close();
         }
-
 
         serverSocket.close();
     }
@@ -46,13 +58,12 @@ public class Tests implements ServerAuthenticator {
             System.out.println("Responding with " + response);
             Socket socket = conn.accept(response);
 
-            NetBatch batch = new NetBatch();
-
             for (int i = 0; i < 1000; i++) {
-                batch.add(new UpdateObject("asdfasf=rawfssfarfaa", 100, 200, i));
+                socket.send(new UpdateObject("Big Random String", 100, 200, i));
             }
-
-            socket.sendBatch(batch);
         }
     }
+
+
+    //1. Тест на коннект с пингом и потерей + отправить запрос сразу при подключении.
 }

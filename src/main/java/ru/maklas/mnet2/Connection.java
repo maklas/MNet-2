@@ -8,7 +8,7 @@ public class Connection {
 
     private Object request;
     private Object response;
-    private SocketImpl socket;
+    SocketImpl socket;
     private final ServerSocket serverSocket;
     private boolean accepted;
     private boolean rejected;

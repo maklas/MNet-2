@@ -152,11 +152,11 @@ public class ServerSocket {
         return udp;
     }
 
-    public Array<SocketImpl> getSockets(){
-        return getSockets(new Array<SocketImpl>());
+    public Array<Socket> getSockets(){
+        return getSockets(new Array<Socket>());
     }
 
-    public Array<SocketImpl> getSockets(Array<SocketImpl> sockets){
+    public Array<Socket> getSockets(Array<Socket> sockets){
         sockets.clear();
         synchronized (socketMap){
             for (SocketMap.SocketWrap socket : socketMap.sockets) {
@@ -171,8 +171,8 @@ public class ServerSocket {
     }
 
     public void close(){
-        Array<SocketImpl> sockets = getSockets();
-        for (SocketImpl socket : sockets) {
+        Array<Socket> sockets = getSockets();
+        for (Socket socket : sockets) {
             socket.close(DCType.SERVER_SHUTDOWN);
         }
         udp.close();
