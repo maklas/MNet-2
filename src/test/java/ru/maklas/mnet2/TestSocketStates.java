@@ -21,10 +21,10 @@ public class TestSocketStates implements ServerAuthenticator{
     @Test
     public void testStates() throws Exception {
 
-        AtomicBoolean dcSubCalled = new AtomicBoolean();
-        AtomicBoolean dcClientCalled = new AtomicBoolean();
+        final AtomicBoolean dcSubCalled = new AtomicBoolean();
+        final AtomicBoolean dcClientCalled = new AtomicBoolean();
 
-        Socket client = new SocketImpl(InetAddress.getLocalHost(), port, TestUtils.serializerSupplier.get());
+        final Socket client = new SocketImpl(InetAddress.getLocalHost(), port, TestUtils.serializerSupplier.get());
         assertEquals(SocketState.NOT_CONNECTED, client.getState());
 
 

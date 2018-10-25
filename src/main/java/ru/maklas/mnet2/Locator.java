@@ -1,12 +1,10 @@
 package ru.maklas.mnet2;
 
+import com.esotericsoftware.kryo.util.ObjectMap;
 import ru.maklas.mnet2.serialization.Serializer;
-import ru.maklas.mrudp.AddressObjectMap;
 
 import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
+import java.net.*;
 import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -14,7 +12,6 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static ru.maklas.locator.LocatorUtils.createRequest;
 
 public class Locator {
     private static int locatorCounter = 0;
@@ -37,11 +34,8 @@ public class Locator {
     /**
      * Creates a new Locator instance which is able to send request
      * to the specified broadcast address and receive responses.
-     * @param address Broadcast address. Use 255.255.255.255 if you can't know for sure subnet broadcast address.
-     *                But that's not recommended since routers can sometimes block udp packets on 255.255.255.255
      * @param port A port {@link BroadcastServlet} must listen on to receive your request.
      * @param bufferSize max size of requests and responses. Make sure It's above any byte[] you're trying to send
-     * @param serializer
  * @throws Exception if address can't be parsed.
      */
     public Locator(int port, int bufferSize, String uuid, Serializer serializer) throws Exception {
@@ -76,7 +70,7 @@ public class Locator {
         receivingPacket = new DatagramPacket(new byte[bufferSize], bufferSize);
         socket = new DatagramSocket();
         socket.setBroadcast(true);
-        receiver = new Receiver(receivingPacket, socket, this.uuid);
+        receiver = new Receiver(receivingPacket, socket, this.uuid, serializer);
         executor.submit(receiver);
     }
 
@@ -94,18 +88,17 @@ public class Locator {
      */
     public boolean startDiscovery(final int discoveryTimeMS, final int resends, final Object requestData, BroadcastReceiver bReceiver) {
         boolean canStart = discovering.compareAndSet(false, true);
+        final byte[] serializedReq = serializer.serialize(requestData);
         if (!canStart){
             return false;
         }
 
         final int seq = seqCounter.getAndIncrement();
-        this.receiver.activate(seq, responseNotifier);
+        this.receiver.activate(seq, bReceiver);
         executor.submit(new Runnable() {
             @Override
             public void run() {
-
-                byte[] fullPackage = createRequest(uuid, seq, requestData);
-
+                byte[] fullPackage = LocatorUtils.createRequest(uuid, seq, serializedReq);
                 try {
                     final int msToWaitEachIteration = discoveryTimeMS/resends;
                     for (int i = 0; i < resends; i++) {
@@ -113,7 +106,6 @@ public class Locator {
                         Thread.sleep(msToWaitEachIteration);
                     }
                 } catch (InterruptedException e) {}
-
             }
         });
 
@@ -133,11 +125,11 @@ public class Locator {
             isSleeping = false;
             sleepingThread = null;
         }
+
         receiver.stop();
         discovering.set(false);
-        responseNotifier.finish(interrupted);
+        bReceiver.finished(interrupted);
         return true;
-
     }
 
     /**
@@ -187,21 +179,23 @@ public class Locator {
         private final DatagramPacket receivingPacket;
         private final DatagramSocket socket;
         private final byte[] uuid;
+        private final Serializer serializer;
         private int seq;
-        private BroadcastReceiver responseNotifier;
-        private final AddressObjectMap<Boolean> addressObjectMap;
+        private BroadcastReceiver broadcastReceiver;
+        private final ObjectMap<InetSocketAddress, Boolean> addressObjectMap;
         private volatile boolean stop = false;
 
-        public Receiver(DatagramPacket receivingPacket, DatagramSocket socket, byte[] uuid) {
+        public Receiver(DatagramPacket receivingPacket, DatagramSocket socket, byte[] uuid, Serializer serializer) {
             this.receivingPacket = receivingPacket;
             this.socket = socket;
             this.uuid = uuid;
-            this.addressObjectMap = new AddressObjectMap<Boolean>();
+            this.serializer = serializer;
+            this.addressObjectMap = new ObjectMap<InetSocketAddress, Boolean>();
         }
 
         void activate(int seq, BroadcastReceiver responseNotifier){
             this.seq = seq;
-            this.responseNotifier = responseNotifier;
+            this.broadcastReceiver = responseNotifier;
             this.stop = false;
             addressObjectMap.clear();
         }
@@ -209,58 +203,54 @@ public class Locator {
         @Override
         public void run() {
 
+            DatagramPacket receivingPacket = this.receivingPacket;
+            byte[] receivingBuffer = receivingPacket.getData();
+            DatagramSocket socket = this.socket;
+
             while (!Thread.interrupted()){
 
-                DatagramPacket receivingPacket = this.receivingPacket;
 
                 try {
                     socket.receive(receivingPacket);
                 } catch (IOException e) {
-                   break;
+                    if (socket.isClosed())
+                        break;
+                    else
+                        continue;
                 }
                 if (stop){
                     continue;
                 }
-
 
                 int length = receivingPacket.getLength();
                 if (length < LocatorUtils.minMsgLength){
                     continue;
                 }
 
-                byte[] fullPackage = new byte[length];
-                System.arraycopy(receivingPacket.getData(), 0, fullPackage, 0, length);
-                boolean startsWithUUID = LocatorUtils.startsWithUUID(fullPackage, uuid);
-                if (!startsWithUUID){
+                boolean startsWithUUID = LocatorUtils.startsWithUUID(receivingBuffer, uuid);
+                if (!startsWithUUID
+                        || !LocatorUtils.isResponse(receivingBuffer)
+                        || LocatorUtils.getSeq(receivingBuffer) != seq){
                     continue;
                 }
-
-
-                if (!LocatorUtils.isResponse(fullPackage)){
-                    continue;
-                }
-
-                if (LocatorUtils.getSeq(fullPackage) != seq){
-                    continue;
-                }
-
 
                 InetAddress address = receivingPacket.getAddress();
                 int port = receivingPacket.getPort();
+                InetSocketAddress sockAddr = new InetSocketAddress(address, port);
 
-                Boolean alreadyReceived = addressObjectMap.get(address, port);
+                Boolean alreadyReceived = addressObjectMap.get(sockAddr);
                 if (alreadyReceived == null){
                     alreadyReceived = false;
                 }
 
-
-                if (alreadyReceived){
-                    continue;
-                } else {
-                    addressObjectMap.put(address, port, true);
-                    byte[] userData = new byte[length - 21];
-                    System.arraycopy(fullPackage, 21, userData, 0, length - 21);
-                    responseNotifier.notify(new LocatorResponse(address, port, userData));
+                if (!alreadyReceived){
+                    addressObjectMap.put(sockAddr, true);
+                    try {
+                        Object userResponse = serializer.deserialize(receivingBuffer, 21, length - 21);
+                        broadcastReceiver.receive(new BroadcastResponse(address, port, userResponse));
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
                 }
 
 

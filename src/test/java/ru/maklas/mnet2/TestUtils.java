@@ -23,11 +23,11 @@ public class TestUtils {
         });
     }
 
-    public static void startUpdating(ServerSocket serverSocket, int freq, SocketProcessor processor){
+    public static void startUpdating(final ServerSocket serverSocket, final int freq, final SocketProcessor processor){
         new Thread(new Runnable() {
             @Override
             public void run() {
-                Array<Socket> sockets = new Array<>();
+                Array<Socket> sockets = new Array<Socket>();
                 while (!serverSocket.isClosed()) {
                     serverSocket.update();
                     serverSocket.getSockets(sockets);

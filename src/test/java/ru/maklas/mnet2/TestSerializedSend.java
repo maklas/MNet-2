@@ -22,7 +22,7 @@ public class TestSerializedSend implements ServerAuthenticator{
 
     @Test
     public void testSendSerialized() throws Exception {
-        AtomicInteger received = new AtomicInteger();
+        final AtomicInteger received = new AtomicInteger();
 
         ServerSocket serverSocket = TestUtils.newServerSocket(TestUtils.udp(port, 200, 50), this);
         TestUtils.startUpdating(serverSocket, 16, new SocketProcessor() {

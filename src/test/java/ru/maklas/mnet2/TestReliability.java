@@ -29,7 +29,7 @@ public class TestReliability implements ServerAuthenticator{
         Log.trace(response.toString());
 
 
-        AtomicInteger counter = new AtomicInteger(0);
+        final AtomicInteger counter = new AtomicInteger(0);
         for (int i = 0; i < 200; i++) {
             client.update(new SocketProcessor() {
                 @Override

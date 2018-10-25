@@ -31,7 +31,7 @@ public class TestConnection implements ServerAuthenticator {
         assertNotNull(response.getResponse());
         assertEquals("Welcome, maklas!", ((ConnectionResponse) response.getResponse()).getWelcome());
 
-        AtomicInteger counter = new AtomicInteger(0);
+        final AtomicInteger counter = new AtomicInteger(0);
         for (int i = 0; i < 200; i++) {
             client.update(new SocketProcessor() {
                 @Override
