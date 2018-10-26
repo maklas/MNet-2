@@ -6,7 +6,7 @@
 
     <groupId>ru.maklas.mnet2</groupId>
     <artifactId>MNet-2</artifactId>
-    <version>0.1</version>
+    <version>0.2</version>
     <packaging>jar</packaging>
 
     <dependencies>
