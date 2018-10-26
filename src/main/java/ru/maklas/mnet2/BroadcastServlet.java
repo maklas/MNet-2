@@ -20,7 +20,7 @@ public class BroadcastServlet {
     private final byte[] uuid;
     private final Serializer serializer;
     private final BroadcastProcessor processor;
-    private volatile boolean enabled = false;
+    private volatile boolean enabled = true;
     private final Thread thread;
     private final HashMap<Pack, byte[]> memory = new HashMap<Pack, byte[]>();
     private final AtomicQueue<Request> requestAtomicQueue = new AtomicQueue<Request>(1000);
