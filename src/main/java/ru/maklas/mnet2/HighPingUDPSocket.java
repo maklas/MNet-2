@@ -135,8 +135,13 @@ public class HighPingUDPSocket implements UDPSocket, Runnable{
         delegate.connect(address, port);
     }
 
+    @Override
+    public void setBroadcast(boolean enabled) throws SocketException {
+        delegate.setBroadcast(enabled);
+    }
 
     private class Sender implements Runnable {
+
 
         private final AtomicQueue<DataTriplet> sendingQueue = new AtomicQueue<DataTriplet>(15000);
 
@@ -174,7 +179,6 @@ public class HighPingUDPSocket implements UDPSocket, Runnable{
             sendingQueue.put(triplet);
         }
 
-
         private void send(DataTriplet triplet, DatagramPacket packet) throws Exception {
             packet.setAddress(triplet.address);
             packet.setPort(triplet.port);
@@ -182,5 +186,6 @@ public class HighPingUDPSocket implements UDPSocket, Runnable{
             packet.setLength(triplet.data.length);
             delegate.send(packet);
         }
+
     }
 }

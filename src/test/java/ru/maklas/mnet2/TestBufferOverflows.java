@@ -18,7 +18,7 @@ public class TestBufferOverflows implements ServerAuthenticator {
 
     @Test(expected = KryoException.class)
     public void bufferTest() throws Exception {
-        ServerSocket serverSocket = TestUtils.newServerSocket(TestUtils.udp(port, 200, 50), this);
+        ServerSocket serverSocket = TestUtils.newServerSocket(TestUtils.udp(port, 200, 40), this);
         TestUtils.startUpdating(serverSocket, 16);
 
         Socket client = new SocketImpl(InetAddress.getLocalHost(), port, TestUtils.serializerSupplier.get());

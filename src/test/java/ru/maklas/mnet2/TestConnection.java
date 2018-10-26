@@ -18,7 +18,7 @@ public class TestConnection implements ServerAuthenticator {
     @Test
     public void testConnections() throws Exception {
 
-        ServerSocket serverSocket = TestUtils.newServerSocket(TestUtils.udp(port, 250, 80), this);
+        ServerSocket serverSocket = TestUtils.newServerSocket(TestUtils.udp(port, 250, 50), this);
         TestUtils.startUpdating(serverSocket, 16);
 
         Socket client = new SocketImpl(InetAddress.getLocalHost(), port, TestUtils.serializerSupplier.get());

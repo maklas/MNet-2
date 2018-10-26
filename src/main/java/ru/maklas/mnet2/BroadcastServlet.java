@@ -12,7 +12,7 @@ import java.util.HashMap;
 
 public class BroadcastServlet {
 
-    private static volatile int threadCounter;
+    private static int threadCounter;
 
     private final DatagramSocket socket;
     private final DatagramPacket sendingPacket;
@@ -23,7 +23,6 @@ public class BroadcastServlet {
     private volatile boolean enabled = false;
     private final Thread thread;
     private final HashMap<Pack, byte[]> memory = new HashMap<Pack, byte[]>();
-    private final Object memoryMonitor = new Object();
     private final AtomicQueue<Request> requestAtomicQueue = new AtomicQueue<Request>(1000);
 
 
@@ -53,7 +52,7 @@ public class BroadcastServlet {
         socket = new DatagramSocket(port, InetAddress.getByName("0.0.0.0"));
         sendingPacket = new DatagramPacket(new byte[bufferSize], bufferSize);
         receivingPacket = new DatagramPacket(new byte[bufferSize], bufferSize);
-        this.uuid = Arrays.copyOf(uuid, 16);
+        this.uuid = LocatorUtils.normalizeUUID(uuid);
         this.serializer = serializer;
         this.processor = processor;
         thread = new Thread(new Runnable() {
@@ -73,9 +72,7 @@ public class BroadcastServlet {
     }
 
     public void disable(){
-        synchronized (memoryMonitor){
-            memory.clear();
-        }
+        memory.clear();
         enabled = false;
     }
 
@@ -85,18 +82,19 @@ public class BroadcastServlet {
         Request req = requestAtomicQueue.poll();
         if (req == null) return;
 
-        synchronized (memoryMonitor){
-            while (req != null){
-                Pack pack = req.pack;
+        while (req != null){
+            Pack pack = req.pack;
 
-                byte[] oldResponse = memory.get(pack);
-                if (oldResponse == null){
-                    oldResponse = serializer.serialize(processor.process(pack.address, pack.port, req.request));
-                    memory.put(pack, oldResponse);
-                }
-                sendData(pack.address, pack.port, oldResponse);
-                req = requestAtomicQueue.poll();
+            byte[] oldResponse = memory.get(pack);
+            if (oldResponse == null){
+                if (memory.size() > 16) memory.clear();
+                byte[] serialized = serializer.serialize(processor.process(pack.address, pack.port, req.request));
+                oldResponse = LocatorUtils.createResponse(uuid, pack.seq, serialized);
+                memory.put(pack, oldResponse);
             }
+            sendData(pack.address, pack.port, oldResponse);
+            if (isClosed() || !isEnabled()) return;
+            req = requestAtomicQueue.poll();
         }
     }
 
@@ -128,7 +126,6 @@ public class BroadcastServlet {
         DatagramSocket socket = this.socket;
         byte[] receivingBuffer = receivingPacket.getData();
         Serializer serializer = this.serializer;
-        HashMap<Pack, byte[]> memory = this.memory;
 
         while (!socket.isClosed()) {
 
@@ -170,32 +167,18 @@ public class BroadcastServlet {
             }
 
             Pack pack = new Pack(address, port, seq);
-
-            byte[] alreadySentResponse;
-            synchronized (memoryMonitor) {
-                alreadySentResponse = memory.get(pack);
-                if (alreadySentResponse != null) {
-                    sendData(address, port, alreadySentResponse);
-                } else {
-                    if (memory.size() > 32){
-                        memory.clear();
-                    }
-                    requestAtomicQueue.put(new Request(pack, userRequest));
-                }
-            }
+            requestAtomicQueue.put(new Request(pack, userRequest));
         }
     }
 
     private void sendData(InetAddress address, int port, byte[] data){
         DatagramPacket packet = this.sendingPacket;
-        synchronized (packet) {
-            packet.setData(data);
-            packet.setAddress(address);
-            packet.setPort(port);
-            try {
-                socket.send(packet);
-            } catch (IOException ignore) {}
-        }
+        packet.setData(data);
+        packet.setAddress(address);
+        packet.setPort(port);
+        try {
+            socket.send(packet);
+        } catch (IOException ignore) {}
     }
 
     private class Pack {
@@ -233,7 +216,6 @@ public class BroadcastServlet {
     private class Request {
         Pack pack;
         Object request;
-        byte[] response;
 
         public Request(Pack pack, Object request) {
             this.pack = pack;

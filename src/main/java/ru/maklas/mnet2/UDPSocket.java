@@ -48,4 +48,20 @@ public interface UDPSocket {
      * Binds socket to the desired address, all datagrams will be send to and received from this address
      */
     void connect(InetAddress address, int port);
+
+    /**
+     * Enable/disable SO_BROADCAST.
+     *
+     * <p> Some operating systems may require that the Java virtual machine be
+     * started with implementation specific privileges to enable this option or
+     * send broadcast datagrams.
+     *
+     * @param  enabled
+     *         whether or not to have broadcast turned on.
+     *
+     * @throws  SocketException
+     *          if there is an error in the underlying protocol, such as an UDP
+     *          error.
+     */
+    void setBroadcast(boolean enabled) throws SocketException;
 }

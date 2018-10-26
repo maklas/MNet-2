@@ -24,7 +24,7 @@ public class TestSerializedSend implements ServerAuthenticator{
     public void testSendSerialized() throws Exception {
         final AtomicInteger received = new AtomicInteger();
 
-        ServerSocket serverSocket = TestUtils.newServerSocket(TestUtils.udp(port, 200, 50), this);
+        ServerSocket serverSocket = TestUtils.newServerSocket(TestUtils.udp(port, 200, 0), this);
         TestUtils.startUpdating(serverSocket, 16, new SocketProcessor() {
             @Override
             public void process(Socket s, Object o) {
@@ -51,7 +51,7 @@ public class TestSerializedSend implements ServerAuthenticator{
         client.sendSerUnrel(serialized);
 
 
-        Thread.sleep(500);
+        Thread.sleep(1500);
 
         Assert.assertEquals(3, received.get());
 
@@ -70,8 +70,6 @@ public class TestSerializedSend implements ServerAuthenticator{
             ConnectionResponse response = new ConnectionResponse("Welcome, " + ((ConnectionRequest) conn.getRequest()).getName() + "!");
             System.out.println("Responding with " + response);
             Socket socket = conn.accept(response);
-
-
         }
     }
 

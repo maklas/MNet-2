@@ -10,21 +10,35 @@ import java.net.SocketException;
  */
 public class PacketLossUDPSocket implements UDPSocket{
 
-    private UDPSocket delegate;
-    private double packetLossChance;
+    private final UDPSocket delegate;
+    private final double sendLoss;
+    private final double receiveLoss;
 
     /**
      * Creates {@link UDPSocket} out of existing {@link UDPSocket}, but this one gets a chanse of <b>not</b>
      * sending a {@link DatagramPacket} when asked to. Used for testing
      * @param delegate which socket to use to send Datagrams
-     * @param packetLossChance Probability of a packet loss. Must be >=0 and <=100. Measured in percents %
+     * @param sendPacketLossChance Probability of a packet loss while sending data. Must be >=0 and <=100. Measured in percents %
      */
-    public PacketLossUDPSocket(UDPSocket delegate, double packetLossChance) {
-        if (packetLossChance < 0 || packetLossChance > 100){
+    public PacketLossUDPSocket(UDPSocket delegate, double sendPacketLossChance) {
+        this(delegate, sendPacketLossChance, 0);
+    }
+
+    /**
+     * Creates {@link UDPSocket} out of existing {@link UDPSocket}, but this one gets a chanse of <b>not</b>
+     * sending a {@link DatagramPacket} when asked to. Used for testing
+     * @param delegate which socket to use to send Datagrams
+     * @param sendPacketLossChance Probability of a packet loss while sending data. Must be >=0 and <=100. Measured in percents %
+     * @param receivePacketLossChance Probability of a packet loss while receiving data. Must be >=0 and <=100. Measured in percents %
+     */
+    public PacketLossUDPSocket(UDPSocket delegate, double sendPacketLossChance, double receivePacketLossChance) {
+        if (sendPacketLossChance < 0 || sendPacketLossChance > 100
+                || receivePacketLossChance < 0 || receivePacketLossChance > 100){
             throw new RuntimeException("Packet loss chance must be from 0 to 100%");
         }
         this.delegate = delegate;
-        this.packetLossChance = packetLossChance / 100;
+        this.sendLoss = sendPacketLossChance / 100d;
+        this.receiveLoss = receivePacketLossChance / 100d;
     }
 
     @Override
@@ -34,14 +48,22 @@ public class PacketLossUDPSocket implements UDPSocket{
 
     @Override
     public void send(DatagramPacket packet) throws IOException {
-        double random = Math.random();
-        if (random > packetLossChance)
+        if (Math.random() > sendLoss)
             delegate.send(packet);
     }
 
     @Override
     public void receive(DatagramPacket packet) throws IOException {
-        delegate.receive(packet);
+        if (receiveLoss == 0){
+            delegate.receive(packet);
+        } else {
+            while (true){
+                delegate.receive(packet);
+                if (Math.random() < receiveLoss){
+                    return;
+                }
+            }
+        }
     }
 
     @Override
@@ -62,5 +84,10 @@ public class PacketLossUDPSocket implements UDPSocket{
     @Override
     public void connect(InetAddress address, int port) {
         delegate.connect(address, port);
+    }
+
+    @Override
+    public void setBroadcast(boolean enabled) throws SocketException {
+        delegate.setBroadcast(enabled);
     }
 }

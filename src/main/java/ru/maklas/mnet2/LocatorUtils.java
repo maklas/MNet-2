@@ -1,5 +1,7 @@
 package ru.maklas.mnet2;
 
+import java.util.Arrays;
+
 class LocatorUtils {
 
 
@@ -12,6 +14,22 @@ class LocatorUtils {
             }
         }
         return true;
+    }
+
+    static byte[] normalizeUUID(byte[] uuid){
+        if (uuid.length == 0) throw new RuntimeException("UUID must not have length of 0");
+        if (uuid.length == 16) return Arrays.copyOf(uuid, 16);
+        byte[] newUUID = new byte[16];
+        if (uuid.length < 16){
+            for (int i = 0; i < 16; i++) {
+                newUUID[i] = 1;
+            }
+            System.arraycopy(uuid, 0, newUUID, 0, uuid.length);
+        } else {
+            System.arraycopy(uuid, 0, newUUID, 0, 16);
+        }
+
+        return newUUID;
     }
 
     /**

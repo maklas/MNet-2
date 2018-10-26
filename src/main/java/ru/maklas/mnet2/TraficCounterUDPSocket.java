@@ -78,6 +78,11 @@ public class TraficCounterUDPSocket implements UDPSocket{
         return delegate.isClosed();
     }
 
+    @Override
+    public void setBroadcast(boolean enabled) throws SocketException {
+        delegate.setBroadcast(enabled);
+    }
+
     public interface Listener {
 
         void tick(long packetsSent, long sentPacketsSize, long packetsReceived, long receivedPacketsSize, long timePassed);

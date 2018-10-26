@@ -63,4 +63,9 @@ public class JavaUDPSocket implements UDPSocket {
         if (!socket.isConnected())
             socket.connect(address, port);
     }
+
+    @Override
+    public void setBroadcast(boolean enabled) throws SocketException {
+        socket.setBroadcast(enabled);
+    }
 }
