@@ -14,25 +14,17 @@ Decline new connections on your conditions in just single line.
 
 ## Example:
 
-1.  Create ConnectionRequest object
+1.  Create ConnectionRequest object, ConnectionResponse object and any other object for in-game mechanics that you need
 ```java
 public class ConnectionRequest {
     String name;
     String password;
 }
-```
 
-2.  Create ConnectionResponse object
-
-```java
 public class ConnectionResponse {
     String message;
 }
-```
 
-3.  Another object for ingame mechanics:
-
-```java
 public class EntityUpdate {
     int id;
     float x;
@@ -40,7 +32,7 @@ public class EntityUpdate {
 }
 ```
 
-4.  Make Serializer provider. You can use default Kryo serializer or make your own.
+2.  Make Serializer provider. You can use default Kryo serializer or make your own.
 
 ```java
 public static Serializer createSerializer(){
@@ -54,8 +46,8 @@ public static Serializer createSerializer(){
 }
 ```
 
-5.  Make ServerAuthenticator. It will be used to authorize new connections. 
-In our example I will have up to 4 players connected at the same time and they also need a password to connect
+3.  Make ServerAuthenticator. It will be used to authorize new connections. 
+In this example I will have up to 4 players connected at the same time and they also need a correct password to connect
 ```java
 public class MyServerAuthenticator implements ServerAuthenticator {
     Array<Player> players = new Array<Player>();
@@ -85,10 +77,21 @@ public class MyServerAuthenticator implements ServerAuthenticator {
 }
 ```
 
-6.  Create Server and Client sockets
+4.  Server socket and Client socket
 ```java
 
 ServerSocket serverSocket = new ServerSocket(6565, new MyServerAuthenticator(), () -> createSerializer());
+
+serverSocket.update(); 
+/* Server socket must be updated every frame. 
+During that frame, any new connections will be processed by ServerAuthenticator 
+and all non-responsive clients will be disconnected */
+
+for (Socket socket : serverSocket.getSockets()) {
+       socket.update(socketProcessor);
+}
+/*All of the sub-sockets of Server socket also have to be separately updated every frame */
+
 
 Socket clientSocket = new SocketImpl(InetAddress.getByName(address), port, bufferSize,
         /*Inactivity timeout*/ 7_000,
@@ -97,12 +100,8 @@ Socket clientSocket = new SocketImpl(InetAddress.getByName(address), port, buffe
         createSerializer());
 
 ```
-**After Server socket is created it must be updated every frame!**
-```java
-serverSocket.update();
-```
 
-7.  Implement SocketProcessor.class interface by one of your game-flow classes
+5.  Implement SocketProcessor.class interface by one of your game-flow classes
 ```java
 @Override
 public void process(Socket socket, Object o) {
@@ -110,7 +109,7 @@ public void process(Socket socket, Object o) {
 }
 ```
 
-8.  Connect to Server socket and start sending data!
+6.  Now when you're all set, it's time to connect to Server and start sending and receiving data!
 ```java
 ServerResponse response = socket.connect(new ConnectionRequest("maklas", "123", 22), 5_000); //Blocks for 5 seconds. You can also connect asynchroniously by calling socket.connectAsync()
         
@@ -136,3 +135,12 @@ socket.update(this); //Now call this every frame to receive data from server.
 socket.send(new EntityUpdate(id, x, y)); // sends data in order and reliably
 socket.sendUnreliable(new EntityUpdate(id, x, y)) // sends data unreliably and unordered.
 ```
+
+## Testing
+When you need to test your game for high ping or packet loss sustainability, you can use
+different implementations of `UDPSocket`.
+
+`JavaUDPSocket` - Is java's implementation for udp. You need this as a base for all your connections.
+`HighPingUDPSocket` - Allows testing increased ping
+`PacketLossUDPSocket` - Allows testing additional packet loss
+`TraficCounterUDPSocket` - Allows profiling network data usage.
