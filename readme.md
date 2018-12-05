@@ -10,11 +10,13 @@ Decline new connections on your conditions in just single line.
 
 ### Cons:
 * Uses my fork of Libgdx version 1.9.8
-* max size of single packet is about 512 bytes. If you want to send a bigger packet, split it in small sized byte[] and send in a batch. (Will be fixed in future)
 
 ## Example:
 
-1.  Create ConnectionRequest object, ConnectionResponse object and any other object for in-game mechanics that you need
+1.  Create your data model which includes classes for connecting, accepting/rejecting connection and all data-classes for in-game mechanics. Also Serializer
+In this example I'll use 1 object for connecting to server, 1 object for accepting or rejecting connection and 1 in-game object. Also, serialization will be done
+with KryoSerializer. You can use default Kryo serializer as well or make your own.
+
 ```java
 public class ConnectionRequest {
     String name;
@@ -30,11 +32,7 @@ public class EntityUpdate {
     float x;
     float y;
 }
-```
 
-2.  Make Serializer provider. You can use default Kryo serializer or make your own.
-
-```java
 public static Serializer createSerializer(){
     Kryo kryo = new Kryo();
 
@@ -46,7 +44,7 @@ public static Serializer createSerializer(){
 }
 ```
 
-3.  Make ServerAuthenticator. It will be used to authorize new connections. 
+2.  Make ServerAuthenticator. It will be used to authorize new connections. 
 In this example I will have up to 4 players connected at the same time and they also need a correct password to connect
 ```java
 public class MyServerAuthenticator implements ServerAuthenticator {
@@ -77,7 +75,7 @@ public class MyServerAuthenticator implements ServerAuthenticator {
 }
 ```
 
-4.  Server socket and Client socket
+3.  Server socket and Client socket
 ```java
 
 ServerSocket serverSocket = new ServerSocket(6565, new MyServerAuthenticator(), () -> createSerializer());
@@ -101,7 +99,7 @@ Socket clientSocket = new SocketImpl(InetAddress.getByName(address), port, buffe
 
 ```
 
-5.  Implement SocketProcessor.class interface by one of your game-flow classes
+4.  Implement SocketProcessor.class interface by one of your game-flow classes
 ```java
 @Override
 public void process(Socket socket, Object o) {
@@ -109,7 +107,7 @@ public void process(Socket socket, Object o) {
 }
 ```
 
-6.  Now when you're all set, it's time to connect to Server and start sending and receiving data!
+5.  Now when you're all set, it's time to connect to Server and start sending and receiving data!
 ```java
 ServerResponse response = socket.connect(new ConnectionRequest("maklas", "123", 22), 5_000); //Blocks for 5 seconds. You can also connect asynchroniously by calling socket.connectAsync()
         
@@ -135,6 +133,7 @@ socket.update(this); //Now call this every frame to receive data from server.
 socket.send(new EntityUpdate(id, x, y)); // sends data in order and reliably
 socket.sendUnreliable(new EntityUpdate(id, x, y)) // sends data unreliably and unordered.
 socket.sendBig(new EntityUpdate(id, x, y)) // sends data reliably and ordered up to 30 MB of size with buffersize = 512.
+socket.*() //Also many other methods for sending and controlling data. JavaDocs are provided.
 ```
 
 ## Testing

@@ -9,7 +9,7 @@ import java.io.StringWriter;
  * A low overhead, lightweight logging system.
  * @author Nathan Sweet <misc@n4te.com>
  */
-public class Log {
+class Log {
     public static final int LEVEL_ERROR = 3;
     public static final int LEVEL_DEBUG = 2;
     public static final int LEVEL_TRACE = 1;
