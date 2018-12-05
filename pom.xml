@@ -18,9 +18,9 @@
         </dependency>
         <!--Gdx-->
         <dependency>
-            <groupId>com.github.maklas</groupId>
-            <artifactId>gdx-fork-maklas</artifactId>
-            <version>1.9.8-6</version>
+            <groupId>com.badlogicgames.gdx</groupId>
+            <artifactId>gdx</artifactId>
+            <version>1.9.8</version>
         </dependency>
         <!--JUnit test-->
         <dependency>

@@ -1,7 +1,7 @@
 package ru.maklas.mnet2.objects;
 
-import com.badlogic.gdx.utils.Supplier;
 import com.esotericsoftware.kryo.Kryo;
+import ru.maklas.mnet2.Supplier;
 import ru.maklas.mnet2.serialization.KryoSerializerProvider;
 
 public class MySerializer extends KryoSerializerProvider{
