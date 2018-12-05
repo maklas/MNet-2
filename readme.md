@@ -74,7 +74,7 @@ public class MyServerAuthenticator implements ServerAuthenticator {
         if (players.size >= 4){ //Check if server is busy
             conn.reject(new ConnectionResponse("Server is full"));
         } else if (!(conn.getRequest() instanceof ConnectionRequest)) { //request was wrong
-            conn.reject("Wrong type of request");
+            conn.reject(new ConnectionResponse("Wrong type of request"));
         } else { 
             
             ConnectionRequest req = (ConnectionRequest) conn.getRequest();
@@ -125,13 +125,16 @@ socket.update(socketProcessor);
 ```
 
 4.  Implement `SocketProcessor.class` interface by one of your game-flow classes. 
-If you're using ECS, it can be one of your systems that calls `socket.update(this)` or if you're a man of abstractions,
-`player.update()` might be a good place for that.  
+If you're using ECS, it can be one of your systems that calls `socket.update(this)` or if you're a man of inheritance culture,
+`player.update()` might be a good place for that.
 
 ```java
 @Override
 public void process(Socket socket, Object o) {
     System.out.println("Event received by " + ((Player) socket.getUserData()).getName() + ":" + o);
+    if (o instanceof UpdateObject){
+        ...
+    }
 }
 ```
 
@@ -143,7 +146,8 @@ ServerResponse response = socket.connect(new ConnectionRequest("maklas", "123", 
 //Here is our response object that Server replied with. Check it for being NULL just in case.  
 ConnectionResponse connResp = (ConnectionResponse) response.getResponse();
 
-//There is 4 types of possible outcomes during connection. The only time we can be sure to be connected is when ResponseType == ACCEPTED.
+//There is 4 types of possible outcomes during connection. 
+//The only time we can be sure to be connected is when ResponseType == ACCEPTED.
 //In any other case, socket is not connected.
 switch (response.getType()){
     case ACCEPTED:
@@ -186,7 +190,7 @@ Use `serverSocket.close()`. By closing serverSocket all sub-sockets will also be
 Buffer size is a size of a byte[] buffer that's used by java's DatagramSocket implementation.
 It's recommended to be lower than 576 bytes. If it's above that, then there is no guarantee that
 data will arrive intact. Note that some bytes are used for UDP header and some (from 1 to 9) are used by MNet-2.
-So 512 is a safe bet. It's 128 integers/floats! Good enough for basic game stuff. If you need to send a bigger object,
+So 512 is a safe bet. It's 128 integers/floats! Good enough for basic game stuff. If you need to send a bigger object (for an in-game chat for example),
 send it via `socket.sendBig()`. This object will be divided in parts and reassembled on another end. 
 BufferSize can also be lower than 512, but there is no benefits in it.
 
@@ -196,8 +200,8 @@ Make sure you have the port opened.
 
 * **How to interrupt `socket.update(socketProcessor)` so that I can change states in my game**
 
-`socket.stop()` will do. Let's say you received a command from server to **go from a castle to a dungeon** and an **info about dungeon** right after.
-so that they arrive in the same frame. Now you haven't managed to load dungeon yet, but you receive dungeon info and your game crashes or doesn't respond, 
+`socket.stop()` will do. Let's say you received a command from server to \[**go from a castle to a dungeon**\] and an \[**info about dungeon**\] right after and they
+they arrive in the same frame. Now you haven't managed to load dungeon yet, but you receive dungeon info and your game crashes or doesn't respond, 
 because you can only change from one location to another inbetween frames or even after loading phase, not in a single method call, 
 so by the time you loaded dungeon, there is no **dungeon info**. It stayed in a **castle state**.
 So what you gotta do is call `socket.stop()` when you receive a _state important event_, finish loading new state and only then start updating socket again.
@@ -205,7 +209,7 @@ So what you gotta do is call `socket.stop()` when you receive a _state important
 * **What Address should I use for BroadcastServlet and BroadcastSocket?**
 
 For `BroadcastServlet` you generally use `0.0.0.0`
-For `BroadcastSocket` you can use `255.255.255.255` (full [broadcast address]: https://en.wikipedia.org/wiki/Broadcast_address "Wikipedia") or your subnet-directed broadcast address like `192.168.255.255`
+For `BroadcastSocket` you can use `255.255.255.255` (full [broadcast address](https://en.wikipedia.org/wiki/Broadcast_address "Wikipedia")) or your subnet-directed broadcast address like `192.168.255.255`
 which is better because there is no guarantee that `255.255.255.255` will be redirected by all routers. But you can't always know subnet-directed broadcast address.
 
 * **What is batching?**
