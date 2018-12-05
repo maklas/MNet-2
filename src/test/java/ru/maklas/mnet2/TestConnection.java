@@ -1,6 +1,5 @@
 package ru.maklas.mnet2;
 
-import org.junit.Assert;
 import org.junit.Test;
 import ru.maklas.mnet2.objects.ConnectionRequest;
 import ru.maklas.mnet2.objects.ConnectionResponse;
@@ -9,7 +8,8 @@ import ru.maklas.mnet2.objects.UpdateObject;
 import java.net.InetAddress;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 public class TestConnection implements ServerAuthenticator {
 

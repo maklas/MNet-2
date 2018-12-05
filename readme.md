@@ -63,7 +63,7 @@ public class MyServerAuthenticator implements ServerAuthenticator {
             ConnectionRequest req = (ConnectionRequest) conn.getRequest();
             if ("123".equals(req.getPassword())){ //validate password
                 Socket socket = conn.accept(new ConnectionResponse("Welcome, " + req.getName() + "!")); //obtain Socket
-                final Player player = new Player(req.getName(), req.getAge(), socket);
+                final Player player = new Player(req.getName(), socket);
                 socket.setUserData(player); //Save Player in socket, so that we can know who send us data
                 players.add(player);
                 socket.addDcListener((sock, msg) -> { //Add dc listener. We need to remove Player from Array after he disconnects
@@ -117,10 +117,10 @@ ConnectionResponse connResp = (ConnectionResponse) response.getResponse();
 
 switch (response.getType()){
     case ACCEPTED:
-        System.out.println("Successfully connected with message " + ((ConnectionResponse) connResp).getMessage());
+        System.out.println("Successfully connected with message " + connResp.getMessage());
         break;
     case REJECTED:
-        System.out.println("Servrer rejected our request with message " + ((ConnectionResponse) connResp).getMessage());
+        System.out.println("Servrer rejected our request with message " + connResp.getMessage());
         break;
     case NO_RESPONSE:
         System.out.println("Server doesn't respond");
@@ -134,6 +134,7 @@ socket.update(this); //Now call this every frame to receive data from server.
 
 socket.send(new EntityUpdate(id, x, y)); // sends data in order and reliably
 socket.sendUnreliable(new EntityUpdate(id, x, y)) // sends data unreliably and unordered.
+socket.sendBig(new EntityUpdate(id, x, y)) // sends data reliably and ordered up to 30 MB of size with buffersize = 512.
 ```
 
 ## Testing
@@ -141,6 +142,9 @@ When you need to test your game for high ping or packet loss sustainability, you
 different implementations of `UDPSocket`.
 
 `JavaUDPSocket` - Is java's implementation for udp. You need this as a base for all your connections.
+
 `HighPingUDPSocket` - Allows testing increased ping
+
 `PacketLossUDPSocket` - Allows testing additional packet loss
+
 `TraficCounterUDPSocket` - Allows profiling network data usage.

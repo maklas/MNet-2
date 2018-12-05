@@ -35,6 +35,17 @@ public interface Socket {
      */
     void send(Object o);
 
+
+    /**
+     * <p>Sends data to connected socket if current state == CONNECTED</p>
+     * <p>This method provides reliable, and ordered Object sending. Objects will be delivered in the order of sending.
+     * Objects will be resent over and over until socket on the other end received it or disconnection occurs
+     * </p>
+     *
+     * @param o Object to be send. Max serialized size == (bufferSize - 9) * 2^16. Object can be changed after calling this method
+     */
+    void sendBig(Object o);
+
     /**
      * <p>Sends Object to connected socket if current state == CONNECTED</p>
      * <p>This method sends data immediately to a socket on the other end and <b>does not provide reliability nor ordering</b>.

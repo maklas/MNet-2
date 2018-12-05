@@ -18,10 +18,13 @@ class PacketType {
 
     static final byte batch = 30;
 
-    static final byte pingRequest = 40;
-    static final byte pingResponse = 41;
+    //[1-type, 4-seq, 2-id, 2-size, x-data]. Max - 15 MB with buffersize == 512
+    static final byte bigRequest = 40;
 
-    static final byte disconnect = 50;
+    static final byte pingRequest = 110;
+    static final byte pingResponse = 111;
+
+    static final byte disconnect = 127;
 
 
     static byte[] build5byte(byte settings, int seq, byte [] data){

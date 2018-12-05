@@ -3,6 +3,7 @@ package ru.maklas.mnet2;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.AtomicQueue;
 import com.badlogic.gdx.utils.Consumer;
+import com.badlogic.gdx.utils.ObjectMap;
 import ru.maklas.mnet2.serialization.Serializer;
 
 import java.io.IOException;
@@ -44,6 +45,9 @@ public class SocketImpl implements Socket{
     //Очередь в которой полученные пакеты сортируются, если они были получены в неправильной последовательности
     //byte[] - пакет или пинг если длинна == 0, byte[][] - batch пакет
     private final SortedIntList<Object> receivingSortQueue = new SortedIntList<Object>();
+    //Аккумулирует bigRequest пока они не соберутся полностью.
+    private final ObjectMap<Integer, BigStorage> bigAccumulator = new ObjectMap<Integer, BigStorage>();
+    private int bigSeqCounter = 1;
 
     //Params
     long resendCD = 125;
@@ -288,26 +292,35 @@ public class SocketImpl implements Socket{
         }
     }
 
-    @Override
-    public void sendSerialized(byte[] data) {
-        if (isConnected()) {
-            int seq = this.seq.getAndIncrement();
-            byte[] fullPackage = build5byte(reliableRequest, seq, data);
-            saveRequest(seq, fullPackage);
-            sendData(fullPackage);
-        }
-    }
+    public void sendBig(Object o){
+        byte[] big = serializer.serialize(o);
+        int id = bigSeqCounter++;
+        if (big.length < bufferSize - 5){
+            sendSerialized(big);
+        } else {
+            if (isConnected()){
+                int maxPerPacket = bufferSize - 9; //503
 
-    @Override
-    public void sendSerUnrel(byte[] data) {
-        if (isConnected()) {
-            sendBuffer[0] = unreliable;
-            System.arraycopy(data, 0, sendBuffer, 1, data.length);
-            sendPacket.setLength(data.length + 1);
-            try {
-                udp.send(sendPacket);
-            } catch (IOException e) {
-                e.printStackTrace();
+                int packs = big.length / maxPerPacket;
+                if (big.length % (maxPerPacket) > 0){
+                    packs++;
+                }
+
+                int offset = 0;
+                for (int i = 0; i < packs; i++) {
+                    int currentSize = Math.min(maxPerPacket, big.length - offset);
+                    byte[] singlePacket = new byte[currentSize + 9];
+                    singlePacket[0] = PacketType.bigRequest;
+                    int seq = this.seq.getAndIncrement();
+                    PacketType.putInt(singlePacket, seq, 1);
+                    PacketType.putShort(singlePacket, id, 5);
+                    PacketType.putShort(singlePacket, packs, 7);
+                    System.arraycopy(big, offset, singlePacket, 9, currentSize);
+
+                    saveRequest(seq, singlePacket);
+                    sendData(singlePacket);
+                    offset += currentSize;
+                }
             }
         }
     }
@@ -335,6 +348,30 @@ public class SocketImpl implements Socket{
                 i = ((Integer) tuple[1]);
                 saveRequest(seq, fullPackage);
                 sendData(fullPackage);
+            }
+        }
+    }
+
+    @Override
+    public void sendSerialized(byte[] data) {
+        if (isConnected()) {
+            int seq = this.seq.getAndIncrement();
+            byte[] fullPackage = build5byte(reliableRequest, seq, data);
+            saveRequest(seq, fullPackage);
+            sendData(fullPackage);
+        }
+    }
+
+    @Override
+    public void sendSerUnrel(byte[] data) {
+        if (isConnected()) {
+            sendBuffer[0] = unreliable;
+            System.arraycopy(data, 0, sendBuffer, 1, data.length);
+            sendPacket.setLength(data.length + 1);
+            try {
+                udp.send(sendPacket);
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         }
     }
@@ -578,6 +615,13 @@ public class SocketImpl implements Socket{
                     }
                 } catch (Exception ignore){}
                 break;
+            case bigRequest:
+                sendAck(seq);
+                int expectedSeqBig = lastInsertedSeq + 1;
+                if (seq >= expectedSeqBig){
+                    toBigAccumulator(seq, fullPacket);
+                }
+                break;
             case pingRequest:
                 final long startTime = extractLong(fullPacket, 5);
                 sendPingResponse(seq, startTime);
@@ -587,7 +631,7 @@ public class SocketImpl implements Socket{
                 if (expectSeq3 == seq){
                     lastInsertedSeq = seq;
                     updateReceiveOrderQueue();
-                } else if (expectSeq3 < seq){
+                } else if (seq > expectSeq3){
                     addToWaitings(seq, new PingPacket(0));
                 }
                 break;
@@ -618,6 +662,64 @@ public class SocketImpl implements Socket{
                 break;
             default:
                 System.err.println("Unknown message type: " + type);
+        }
+    }
+
+    private void toBigAccumulator(int seq, byte[] fullPacketBig) {
+        byte[] userData = new byte[fullPacketBig.length - 9];
+        System.arraycopy(fullPacketBig, 9, userData, 0, userData.length);
+        int id = PacketType.extractShort(fullPacketBig, 5);
+        BigStorage bs = bigAccumulator.get(id);
+        if (bs == null){
+            bs = new BigStorage(extractShort(fullPacketBig, 7));
+            bigAccumulator.put(id, bs);
+        }
+
+        //Если заполнили BigStorage
+        if (bs.put(seq, userData)){
+            int lastSeqOfParts = lastInsertedSeq;
+            int totalByteSize = 0;
+            for (SortedIntList.Node<byte[]> part : bs.parts) {
+                totalByteSize += part.value.length;
+                lastSeqOfParts = part.index;
+            }
+            byte[] result = new byte[totalByteSize];
+            int offset = 0;
+            for (SortedIntList.Node<byte[]> part : bs.parts) {
+                byte[] value = part.value;
+
+                System.arraycopy(value, 0, result, offset, value.length);
+                offset += value.length;
+            }
+            bigAccumulator.remove(id);
+
+            Object deserialized = null;
+            try {
+                deserialized = serializer.deserialize(result);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            //Собрали массив целиком. И из него объект, удалив BigStorage.
+
+            int expectedSeq = lastInsertedSeq + 1;
+            int firstPartSeq = bs.parts.first.index;
+
+            if (firstPartSeq == expectedSeq){ //Если мы прямо сейчас ожидаем этот объект, то просто присваиваем lastInsertedSeq последним seq части и заносим объект в очередь
+                lastInsertedSeq = lastSeqOfParts;
+                try {
+                    queue.put(deserialized);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+
+                updateReceiveOrderQueue();
+            } else if (firstPartSeq > expectedSeq){ //Если же мы впереди всё ещё ждём чего-то, то добавляем объект в Waitings. Заполняя остатки seq PingPacket-ами
+                PingPacket pp = new PingPacket(0);
+                addToWaitings(firstPartSeq, deserialized != null ? deserialized : pp);
+                for (int i = 1; i < bs.parts.size; i++) {
+                    addToWaitings(firstPartSeq + i, pp);
+                }
+            }
         }
     }
 
@@ -759,9 +861,9 @@ public class SocketImpl implements Socket{
 
         while (mayBeData != null) {
             this.lastInsertedSeq = expectedSeq;
-            if (mayBeData instanceof PingPacket) continue;
+            if (mayBeData instanceof PingPacket) {
 
-            if (mayBeData instanceof Object[]){
+            } else if (mayBeData instanceof Object[]){
                 for (Object packet : ((Object[]) mayBeData)) {
                     this.queue.put(packet);
                 }

@@ -1,18 +1,16 @@
 package ru.maklas.mnet2;
 
 import com.badlogic.gdx.utils.Array;
-import com.badlogic.gdx.utils.Consumer;
 import com.badlogic.gdx.utils.Supplier;
 import ru.maklas.mnet2.objects.MySerializer;
 import ru.maklas.mnet2.serialization.Serializer;
 
 import java.net.SocketException;
-import java.nio.ByteBuffer;
 import java.util.Random;
 
 public class TestUtils {
 
-    public static Supplier<Serializer> serializerSupplier = new MySerializer();
+    public static Supplier<Serializer> serializerSupplier = new MySerializer(512);
 
 
     public static void startUpdating(ServerSocket serverSocket, int freq){
