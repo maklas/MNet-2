@@ -1,21 +1,25 @@
-## Network protocol for games based on UDP using Kryo serialization.
+## Fast UDP Networking for games using LibGDX PC/Android.
 
 ### Features:
-* Fully over UDP. Optimized for maximum speed. 0.15 ms round trip on localhost pc. 3 ms round trip with PC<->Wi-fi router<->Phone configuration.
+* Fully over UDP. Optimized for maximum speed. Basically as fast as your UDP connection.
+0.15 ms round trip on localhost pc. 3 ms round trip for Phone -> Wi-Fi -> PC -> Wi-Fi -> Phone.
 * Supports Login-Authentication out of the box. No need to worry about 5th guy connecting to a max of 4 game lobby.
 You can decline users before establishing connection with them. Can be used to ping server for current status as well.
 * Supports: Reliable ordered sending, unreliable unordered sending, sending multiple objects in batches, automated ping checking.
-* Used in real working projects and currently developing projects on PC and Android. 
+* Written with Java 6. Done with java 8 in mind. Suitable for Libgdx.
+* Default serialization - Kryo.
 * Testable. Simulate packet loss, simulate high ping, test sending and receiving speed in java code!
-* Local network broadcaster and receiver included for fast and easy way to find servers over local network.
-* You can use JitPack to download and update dependency! 
+* Used in real working projects and currently developing projects for PC and Android. 
+* Local network broadcaster and receiver included for fast and easy way to find servers in local network.
+* You can use JitPack to download this library into your project right now! 
 
 ### Cons:
-* No automated mechanism to determine packet resend delay if it's dropped. Have to be set manually.
 * No reliable unordered sending (yet)
+* No automated mechanism to determine packet resend delay if it's dropped. Have to be set manually.
 * Uses 1 thread for receiving data from UDP channel and deserializing objects. (More than enough for 6 concurrent connections, but
 can clog the thread if a lot of data is sent by too many clients at the same time)
 * Only single-threaded usage.
+* No protection from dos or any kind of attack really
 
 ## Example:
 
@@ -53,7 +57,7 @@ public static Serializer createSerializer(){
 2.  Make ServerAuthenticator. It will be used to authorize new connections. 
 In this example I will have up to 4 players connected at the same time and they also need a correct password to connect.
 Here you can implement any kind of logic you want pretty easily. 
-white-listing, black-listing, bans, password protection, Game Version compatibility check, virtually anything!
+White-listing, black-listing, bans, password protection, game version compatibility check, virtually anything!
 
 * `conn.accept()` will respond successfully to a client and return a socket. Never forget to register socket and remove when it's closed. 
 At this stage you can also add PingListener to listen for pings.
@@ -93,7 +97,7 @@ public class MyServerAuthenticator implements ServerAuthenticator {
 3.  Server socket and Client socket
 ```java
 
-ServerSocket serverSocket = new ServerSocket(6565, new MyServerAuthenticator(), () -> createSerializer());
+ServerSocket serverSocket = new ServerSocket(port, new MyServerAuthenticator(), () -> createSerializer());
 
 /* Server socket must be updated every frame. 
 During that frame, any new connections will be processed by ServerAuthenticator 
@@ -122,7 +126,7 @@ socket.update(socketProcessor);
 
 4.  Implement `SocketProcessor.class` interface by one of your game-flow classes. 
 If you're using ECS, it can be one of your systems that calls `socket.update(this)` or if you're a man of abstractions,
-`player.update()` might be a good place for that.
+`player.update()` might be a good place for that.  
 
 ```java
 @Override
@@ -136,7 +140,7 @@ public void process(Socket socket, Object o) {
 //Blocks for 5 seconds. You can also connect asynchroniously by calling socket.connectAsync()  
 ServerResponse response = socket.connect(new ConnectionRequest("maklas", "123", 22), 5_000); 
 
-//Here is out response object that Server replied with. Check it for `null` just in case.  
+//Here is our response object that Server replied with. Check it for being NULL just in case.  
 ConnectionResponse connResp = (ConnectionResponse) response.getResponse();
 
 //There is 4 types of possible outcomes during connection. The only time we can be sure to be connected is when ResponseType == ACCEPTED.
@@ -146,7 +150,7 @@ switch (response.getType()){
         System.out.println("Successfully connected with message " + connResp.getMessage());
         break;
     case REJECTED:
-        System.out.println("Servrer rejected our request with message " + connResp.getMessage());
+        System.out.println("Server rejected our request with message " + connResp.getMessage());
         break;
     case NO_RESPONSE:
         System.out.println("Server doesn't respond");
@@ -156,9 +160,9 @@ switch (response.getType()){
         break;
 }
 
-socket.update(this); //Now call this every frame to receive data from server.
+socket.update(socketProcessor); //Now call this every frame to receive data from server.
 
-socket.send(new EntityUpdate(id, x, y)); // sends data reliably and in order of sending
+socket.send(new EntityUpdate(id, x, y)); // sends data reliably and in order of sending.
 socket.sendUnreliable(new EntityUpdate(id, x, y)) // sends data unreliably and unordered.
 socket.sendBig(new EntityUpdate(id, x, y)) // sends data reliably and ordered up to 30 MB of size with buffersize = 512.
 socket.*() //Also many other methods for sending and controlling data. JavaDocs are provided.
@@ -170,6 +174,46 @@ Disconnecting is simple. Just call `socket.close()`. DisconnectionListeners will
 After socket was closed, it cannot be reused. Use `socket.close(msg)` to send disconnection message. Usually it specifies reason for disconnection.
 Default disconnection types can be found at `DCType.class`. `DCListener` will receive this message as a parameter. If you need to shutdown server, disconnecting individual sub-sockets won't be enough. 
 Use `serverSocket.close()`. By closing serverSocket all sub-sockets will also be closed and DCListeners notified.
+
+## Adding to your project
+1. Add JitPack repo if you haven't already `maven { url "https://jitpack.io" }`
+2. Add as a dependency `compile "com.github.maklas:MNet-2:0.3"` (check current version in GitHub releases)
+
+## FAQ
+
+* **What's with bufferSize and why is it recommended to be 512?** 
+
+Buffer size is a size of a byte[] buffer that's used by java's DatagramSocket implementation.
+It's recommended to be lower than 576 bytes. If it's above that, then there is no guarantee that
+data will arrive intact. Note that some bytes are used for UDP header and some (from 1 to 9) are used by MNet-2.
+So 512 is a safe bet. It's 128 integers/floats! Good enough for basic game stuff. If you need to send a bigger object,
+send it via `socket.sendBig()`. This object will be divided in parts and reassembled on another end. 
+BufferSize can also be lower than 512, but there is no benefits in it.
+
+* **I can successfully connect locally, but not to my friend over Internet** 
+
+Make sure you have the port opened.
+
+* **How to interrupt `socket.update(socketProcessor)` so that I can change states in my game**
+
+`socket.stop()` will do. Let's say you received a command from server to **go from a castle to a dungeon** and an **info about dungeon** right after.
+so that they arrive in the same frame. Now you haven't managed to load dungeon yet, but you receive dungeon info and your game crashes or doesn't respond, 
+because you can only change from one location to another inbetween frames or even after loading phase, not in a single method call, 
+so by the time you loaded dungeon, there is no **dungeon info**. It stayed in a **castle state**.
+So what you gotta do is call `socket.stop()` when you receive a _state important event_, finish loading new state and only then start updating socket again.
+
+* **What Address should I use for BroadcastServlet and BroadcastSocket?**
+
+For `BroadcastServlet` you generally use `0.0.0.0`
+For `BroadcastSocket` you can use `255.255.255.255` (full [broadcast address]: https://en.wikipedia.org/wiki/Broadcast_address "Wikipedia") or your subnet-directed broadcast address like `192.168.255.255`
+which is better because there is no guarantee that `255.255.255.255` will be redirected by all routers. But you can't always know subnet-directed broadcast address.
+
+* **What is batching?**
+
+If time of delivery is not crucial for you or you just want to send multiple Objects at the same time, 
+you can use `NetBatch` to try squishing multiple objects in a single udp packet.
+Just collect all the objects you want to send into `NetBatch` and send it instead of sending single objects in a loop.
+If your objects can fit into your bufferSize, you will save some time and energy of your phone.
 
 ## Testing
 When you need to test your game for high ping or packet loss sustainability, you can use
