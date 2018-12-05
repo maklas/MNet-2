@@ -9,7 +9,7 @@ public interface BroadcastReceiver {
 
     /**
      * Called when Discovery is finished.
-     * @param interrupted whether or not current discovery was interrupted by calling {@link Locator#interruptDiscovering()}
+     * @param interrupted whether or not current discovery was interrupted by calling {@link BroadcastSocket#interrupt()}
      */
     void finished(boolean interrupted);
 

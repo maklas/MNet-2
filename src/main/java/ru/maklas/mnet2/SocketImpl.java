@@ -2,7 +2,6 @@ package ru.maklas.mnet2;
 
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.AtomicQueue;
-import com.badlogic.gdx.utils.Consumer;
 import com.badlogic.gdx.utils.ObjectMap;
 import ru.maklas.mnet2.serialization.Serializer;
 
@@ -158,16 +157,16 @@ public class SocketImpl implements Socket{
     }
 
     @Override
-    public void connectAsync(final Object request, final int timeout, final Consumer<ServerResponse> handler) {
+    public void connectAsync(final Object request, final int timeout, final ServerResponseHandler handler) {
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
                     ServerResponse connect = connect(request, timeout);
-                    handler.accept(connect);
+                    handler.handle(connect);
                 } catch (IOException e) {
                     e.printStackTrace();
-                    handler.accept(new ServerResponse(ResponseType.WRONG_STATE, null));
+                    handler.handle(new ServerResponse(ResponseType.WRONG_STATE, null));
                 }
             }
         }).start();

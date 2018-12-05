@@ -44,7 +44,7 @@ public class BroadcastServlet {
      * @param port Port which Servlet is listening. Must be the same for Locator.
      * @param bufferSize Max size of requests and responses. Make sure It's above any byte[] you're trying to send
      * @param uuid  Unique id for application. So that no other apps that use this library could see your request.
-     *             {@link Locator} must have the same UUID in oder to receive requests!
+     *             {@link BroadcastSocket} must have the same UUID in oder to receive requests!
      * @param processor Processor that will process Locators requests and respond to them.
      * @throws Exception if address can't be parsed.
      */
@@ -62,6 +62,14 @@ public class BroadcastServlet {
             }
         }, "BroadcastServlet-" + threadCounter++);
         thread.start();
+    }
+
+
+    /**
+     * Servlet must be enabled in order to function and trigger {@link BroadcastProcessor}.
+     */
+    public boolean isEnabled(){
+        return enabled;
     }
 
     /**
@@ -96,13 +104,6 @@ public class BroadcastServlet {
             if (isClosed() || !isEnabled()) return;
             req = requestAtomicQueue.poll();
         }
-    }
-
-    /**
-     * Servlet must be enabled in order to function and trigger {@link BroadcastProcessor}.
-     */
-    public boolean isEnabled(){
-        return enabled;
     }
 
     public Serializer getSerializer() {

@@ -1,6 +1,5 @@
 package ru.maklas.mnet2;
 
-import com.badlogic.gdx.utils.Consumer;
 import ru.maklas.mnet2.serialization.Serializer;
 
 import java.io.IOException;
@@ -23,7 +22,7 @@ public interface Socket {
     /**
      * Asynchronous connection establishment. Consumer will be called from another thread, so don't forget to sycnhronize
      */
-    void connectAsync(Object request, int timeout, Consumer<ServerResponse> handler);
+    void connectAsync(Object request, int timeout, ServerResponseHandler handler);
 
     /**
      * <p>Sends data to connected socket if current state == CONNECTED</p>

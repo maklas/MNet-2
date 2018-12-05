@@ -26,10 +26,25 @@ public class BroadcastSocket {
     private volatile int currentSeq;
 
 
+    /**
+     * @param port {@link BroadcastServlet} must use the same port to communicate
+     * @param bufferSize max byte[] size that is possible to send over UDP. Recommended to use 512
+     * @param uuid Unique id for application or application version. So that no other apps that use this library could see your request.
+     *             {@link BroadcastServlet} must have the same UUID in oder to receive your requests!
+     */
     public BroadcastSocket(int port, int bufferSize, String uuid, Serializer serializer) throws SocketException, UnknownHostException {
         this(new JavaUDPSocket(), "255.255.255.255", port, bufferSize, uuid.getBytes(), serializer);
     }
 
+    /**
+     *
+     * @param socket Use {@link JavaUDPSocket} for actual connection
+     * @param address target broadcast address. Use default 255.255.255.255 if you don't know what to put in here.
+     * @param port {@link BroadcastServlet} must use the same port to communicate
+     * @param bufferSize max byte[] size that is possible to send over UDP. Recommended to use 512
+     * @param uuid Unique id for application or application version. So that no other apps that use this library could see your request.
+     *             {@link BroadcastServlet} must have the same UUID in oder to receive your requests!
+     */
     public BroadcastSocket(UDPSocket socket, String address, int port, int bufferSize, byte[] uuid, Serializer serializer) throws UnknownHostException, SocketException {
         this.udp = socket;
         this.address = InetAddress.getByName(address);
@@ -59,6 +74,10 @@ public class BroadcastSocket {
         udp.close();
     }
 
+    /**
+     * Interrupts current search if it's in action.
+     * @return true if search was actually interrupted.
+     */
     public boolean interrupt(){
         synchronized (monitor){
             if (receiver != null){
@@ -72,6 +91,9 @@ public class BroadcastSocket {
         return false;
     }
 
+    /**
+     * Starts async search. Don't forget to synchronzie anything you get onto BroadcastReceiver!
+     */
     public boolean search(Object data, final int timeMillis, final int resends, final BroadcastReceiver receiver){
         synchronized (monitor){
             if (this.receiver != null) return false;
