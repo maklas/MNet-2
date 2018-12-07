@@ -211,13 +211,20 @@ So what you gotta do is call `socket.stop()` when you receive a _state important
 For `BroadcastServlet` you generally use `0.0.0.0`
 For `BroadcastSocket` you can use `255.255.255.255` (full [broadcast address](https://en.wikipedia.org/wiki/Broadcast_address "Wikipedia")) or your subnet-directed broadcast address like `192.168.255.255`
 which is better because there is no guarantee that `255.255.255.255` will be redirected by all routers. But you can't always know subnet-directed broadcast address.
+I personally tested this at my house with unconfigured router and some public Wi-Fi spots in malls and subway. Worked every time.
 
-* **What is batching?**
+* **What is batching? When and How should I use it?**
 
-If time of delivery is not crucial for you or you just want to send multiple Objects at the same time, 
-you can use `NetBatch` to try squishing multiple objects in a single udp packet.
-Just collect all the objects you want to send into `NetBatch` and send it instead of sending single objects in a loop.
-If your objects can fit into your bufferSize, you will save some time and energy of your phone.
+Underlying implementation of UDP in Android and PC doesn't care about how much data you send. 
+1 byte or  512 bytes in a single call. It'll take equal amount of time.
+Now, imagine it takes 1 ms to serialize data and 1 ms for `socket.send()` to actually pack and send your data over Internet, your **buffer size** is 512 and 
+you want to send 5 objects of size 100 bytes in a single frame.
+If you call `socket.send()` 5 times. it will take 10 ms to complete. But if you pack them all in a single batch (which your buffer size allows),
+It will only take 6 ms to serialize and send.
+Achieving this is easy. You just carry around the `NetBatch`, collecting all your data in it since the start of the frame 
+and at the end of it you call `socket.send(NetBatch batch)`.
+All you have to care about is that all individual object's sizes are less than **buffer size**.
+If all objects don't fit an a single buffer, they will be split among multiple buffers and sent independently.
 
 ## Testing
 When you need to test your game for high ping or packet loss sustainability, you can use
