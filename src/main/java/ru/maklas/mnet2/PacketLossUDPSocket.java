@@ -59,7 +59,7 @@ public class PacketLossUDPSocket implements UDPSocket{
         } else {
             while (true){
                 delegate.receive(packet);
-                if (Math.random() < receiveLoss){
+                if (Math.random() > receiveLoss){
                     return;
                 }
             }
