@@ -3,9 +3,9 @@
 ### Features:
 * Fully over UDP. Optimized for maximum speed. Basically as fast as your UDP connection.
 0.15 ms round trip on localhost pc. 3 ms round trip for Phone -> Wi-Fi -> PC -> Wi-Fi -> Phone.
+* Supports: Reliable ordered sending, unreliable unordered sending, sending multiple objects in batches, automated ping checking.
 * Supports Login-Authentication out of the box. No need to worry about 5th guy connecting to a max of 4 game lobby.
 You can decline users before establishing connection with them. Can be used to ping server for current status as well.
-* Supports: Reliable ordered sending, unreliable unordered sending, sending multiple objects in batches, automated ping checking.
 * Written with Java 6. Done with java 8 in mind. Suitable for Libgdx.
 * Default serialization - Kryo.
 * Testable. Simulate packet loss, simulate high ping, test sending and receiving speed in java code!
@@ -141,7 +141,7 @@ public void process(Socket socket, Object o) {
 5.  Now when we're finally all set, it's time to connect to Server and start sending and receiving data!
 ```java
 //Blocks for 5 seconds. You can also connect asynchroniously by calling socket.connectAsync()  
-ServerResponse response = socket.connect(new ConnectionRequest("maklas", "123", 22), 5_000); 
+ServerResponse response = socket.connect(new ConnectionRequest("maklas", "123"), 5_000); 
 
 //Here is our response object that Server replied with. Check it for being NULL just in case.  
 ConnectionResponse connResp = (ConnectionResponse) response.getResponse();
