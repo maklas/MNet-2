@@ -156,7 +156,7 @@ public class ServerSocket {
     }
 
     public Array<Socket> getSockets(Array<Socket> sockets){
-        sockets.clear();
+        if (sockets.size > 0) sockets.clear();
         synchronized (socketMap){
             for (SocketMap.SocketWrap socket : socketMap.sockets) {
                 sockets.add(socket.socket);

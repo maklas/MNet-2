@@ -90,6 +90,28 @@ public interface Socket {
     void stop();
 
     /**
+     * Whether or not Congestion control is enabled and controls resend delay
+     */
+    boolean isCongestionControlEnabled();
+
+    /**
+     * Enable/Disable automatic control over resend delay.
+     * <b>Warning. Feature is in developing state</b>
+     */
+    void setCongestionControlEnabled(boolean enabled);
+
+    /**
+     * Current value of how many milliseconds socket wait to resend presumably lost packet
+     */
+    long getResendDelay();
+
+    /**
+     * Sets current resend delay. Will determine how many milliseconds socket waits to resend presumably lost packet.
+     * <b>If {@link #isCongestionControlEnabled()} feature enabled, then this field will be overwritten in the nearest future.</b>
+     */
+    void setResendDelay(long delay);
+
+    /**
      * All listeners are removed when socket is closed
      */
     void addDcListener(DCListener listener);

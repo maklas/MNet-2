@@ -46,10 +46,13 @@ public class SocketImpl implements Socket{
     private final SortedIntList<Object> receivingSortQueue = new SortedIntList<Object>();
     //Аккумулирует bigRequest пока они не соберутся полностью.
     private final ObjectMap<Integer, BigStorage> bigAccumulator = new ObjectMap<Integer, BigStorage>();
+    //Осуществляет контроль над частотой ресендов
+    private CongestionControl cc = new CongestionControl();
+    private volatile boolean enableCongestionControl = false;
     private int bigSeqCounter = 1;
 
     //Params
-    long resendCD = 125;
+    volatile long resendCD = 125;
     long pingCD = 2500;
     int inactivityTimeout = 15000;
     int bufferSize = 512;
@@ -494,6 +497,26 @@ public class SocketImpl implements Socket{
         this.pingCD = millis;
     }
 
+    @Override
+    public boolean isCongestionControlEnabled() {
+        return enableCongestionControl;
+    }
+
+    @Override
+    public void setCongestionControlEnabled(boolean enabled) {
+        this.enableCongestionControl = enabled;
+    }
+
+    @Override
+    public long getResendDelay() {
+        return resendCD;
+    }
+
+    @Override
+    public void setResendDelay(long delay) {
+        resendCD = delay;
+    }
+
     public int getBufferSize() {
         return bufferSize;
     }
@@ -587,7 +610,7 @@ public class SocketImpl implements Socket{
                 }
                 break;
             case reliableAck:
-                removeFromWaitingForAck(seq);
+                removeFromWaitingForAck(seq, lastTimeReceivedMsg);
                 break;
             case unreliable:
                 deserializeAndPut(fullPacket, 1, length - 1);
@@ -636,7 +659,7 @@ public class SocketImpl implements Socket{
                 break;
             case pingResponse:
                 final long startingTime = extractLong(fullPacket, 5);
-                boolean removed = removeFromWaitingForAck(seq);
+                boolean removed = removeFromWaitingForAck(seq, lastTimeReceivedMsg);
                 if (removed){
                     PingPacket ping = new PingPacket(((float) (System.nanoTime() - startingTime))/1000000f);
                     queue.put(ping);
@@ -743,11 +766,22 @@ public class SocketImpl implements Socket{
         receivingSortQueue.insert(seq, userData);
     }
 
-    private boolean removeFromWaitingForAck(int seq) {
+    private boolean removeFromWaitingForAck(int seq, long currentTime) {
         synchronized (requestList){
             ResendPacket removed = requestList.remove(seq);
             if (removed != null){
                 sendPacketPool.free(removed);
+                if (enableCongestionControl) {
+                    if (removed.resends == 0) {
+                        cc.noResendsDelays.add(currentTime - removed.sendTime);
+                    } else {
+                        cc.resendPackets++;
+                    }
+                    if (cc.size() > 25) {
+                        resendCD = cc.calculateAdjustment(resendCD);
+                        cc.clear();
+                    }
+                }
                 return true;
             }
         }
@@ -837,6 +871,7 @@ public class SocketImpl implements Socket{
                 if (currTime - packet.sendTime > resendCD){
                     sendData(packet.data);
                     packet.sendTime = currTime;
+                    packet.resends++;
                 }
             }
         }
@@ -908,11 +943,13 @@ public class SocketImpl implements Socket{
 
     private class ResendPacket {
         public long sendTime;
+        public int resends;
         public byte[] data;
 
         public ResendPacket set(byte[] data){
-            sendTime = System.currentTimeMillis();
+            this.sendTime = System.currentTimeMillis();
             this.data = data;
+            this.resends = 0;
             return this;
         }
     }
