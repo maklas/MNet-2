@@ -61,6 +61,23 @@ public class TestSerializedSend implements ServerAuthenticator{
 
 
 
+    @Test
+    public void testUnreliableBatch() {
+        ConnectionRequest cr = new ConnectionRequest("My Name", "My Password", 22, true);
+        ConnectionRequest cr2 = new ConnectionRequest("My Name", "My Password", 22, false);
+
+        NetBatch netBatch = new NetBatch(2);
+        netBatch.add(cr);
+        netBatch.add(cr2);
+        byte[] bytes = (byte[]) PacketType.buildSafeBatchUnreliable(PacketType.batchUnreliable, netBatch.convertAndGet(TestUtils.serializerSupplier.get()), 0, 512)[0];
+
+        Object[] objects = PacketType.breakBatchDownUnreliable(bytes, TestUtils.serializerSupplier.get());
+
+        for (Object object : objects) {
+            System.out.println(object);
+        }
+    }
+
     @Override
     public void acceptConnection(Connection conn) {
         System.out.println("Received connection request: " + conn);

@@ -17,6 +17,7 @@ class PacketType {
     static final byte unreliable = 20;
 
     static final byte batch = 30;
+    static final byte batchUnreliable = 31;
 
     //[1-type, 4-seq, 2-id, 2-size, x-data]. Max - 15 MB with buffersize == 512
     static final byte bigRequest = 40;
@@ -120,6 +121,42 @@ class PacketType {
     }
 
     /**
+     * @return (byte[] batchRequest, int currentPosition)
+     */
+    public static Object[] buildSafeBatchUnreliable(byte settings, ByteBatch batch, final int pos, int bufferSize) {
+        Array<byte[]> array = batch.array;
+        int retSize = 2;
+        int batchSize = array.size;
+        int endIIncluded = pos;
+        for (int i = pos; i < batchSize; i++) {
+            int length = array.get(i).length;
+            if (retSize + length + 2 > bufferSize){
+                break;
+            }
+            endIIncluded = i;
+            retSize += length + 2;
+        }
+
+        if (retSize == 6){
+            throw new RuntimeException("Can't fit byte[] if length " + array.get(pos).length + " in bufferSize of length " + bufferSize + ". Make sure it's at least 8 bytes more than source byte[]");
+        }
+
+        int safeBatchSize = endIIncluded - pos + 1;
+        byte[] ret = new byte[retSize];
+        ret[0] = settings;
+        ret[1] = (byte) safeBatchSize;
+        int position = 2;
+        for (int i = pos; i <= endIIncluded; i++) {
+            byte[] src = array.get(i);
+            int srcLen = src.length;
+            putShort(ret, srcLen, position);
+            System.arraycopy(src, 0, ret, position + 2, srcLen);
+            position += srcLen + 2;
+        }
+        return new Object[]{ret, Integer.valueOf(endIIncluded + 1)};
+    }
+
+    /**
      * Assumes that batch data is correct. Otherwise will throw Runtime exceptions
      */
     public static byte[][] breakBatchDown(byte[] fullData){
@@ -150,6 +187,21 @@ class PacketType {
         return ret;
     }
 
+    /**
+     * Assumes that batch data is correct. Otherwise will throw Runtime exceptions
+     */
+    public static Object[] breakBatchDownUnreliable(byte[] fullData, Serializer serializer){
+        int arrSize = fullData[1];
+        Object[] ret = new Object[arrSize];
+        int pos = 2;
+        for (int i = 0; i < arrSize; i++) {
+            int packetSize = extractShort(fullData, pos);
+            ret[i] = serializer.deserialize(fullData, pos + 2, packetSize);
+            pos += packetSize + 2;
+        }
+        return ret;
+    }
+
     public static String toString(byte type){
         switch (type) {
             case reliableRequest:
@@ -160,6 +212,8 @@ class PacketType {
                 return "unreliable";
             case batch:
                 return "batch";
+            case batchUnreliable:
+                return "batchUnreliable";
             case pingRequest:
                 return "pingRequest";
             case pingResponse:

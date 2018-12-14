@@ -355,6 +355,31 @@ public class SocketImpl implements Socket{
     }
 
     @Override
+    public void sendUnreliable(NetBatch batch){
+        if (isConnected()) {
+            int size = batch.size();
+            switch (size) {
+                case 0:
+                    return;
+                case 1:
+                    sendUnreliable(batch.get(0));
+                    return;
+            }
+
+            int bufferSize = this.bufferSize;
+
+            ByteBatch bb = batch.convertAndGet(serializer);
+            int i = 0;
+            while (i < size) {
+                Object[] tuple = buildSafeBatchUnreliable(PacketType.batchUnreliable, bb, i, bufferSize);
+                byte[] fullPackage = (byte[]) tuple[0];
+                i = ((Integer) tuple[1]);
+                sendData(fullPackage);
+            }
+        }
+    }
+
+    @Override
     public void sendSerialized(byte[] data) {
         if (isConnected()) {
             int seq = this.seq.getAndIncrement();
@@ -502,7 +527,6 @@ public class SocketImpl implements Socket{
         return enableCongestionControl;
     }
 
-    @Override
     public void setCongestionControlEnabled(boolean enabled) {
         this.enableCongestionControl = enabled;
     }
@@ -634,6 +658,14 @@ public class SocketImpl implements Socket{
                     } else {
                         batchPackets = PacketType.breakBatchDown(fullPacket, serializer);
                         addToWaitings(seq, batchPackets);
+                    }
+                } catch (Exception ignore){}
+                break;
+            case batchUnreliable:
+                try {
+                    Object[] batchPackets = PacketType.breakBatchDownUnreliable(fullPacket, serializer);
+                    for (Object batchPacket : batchPackets) {
+                        queue.put(batchPacket);
                     }
                 } catch (Exception ignore){}
                 break;
@@ -941,7 +973,7 @@ public class SocketImpl implements Socket{
                 '}';
     }
 
-    private class ResendPacket {
+    static class ResendPacket {
         public long sendTime;
         public int resends;
         public byte[] data;

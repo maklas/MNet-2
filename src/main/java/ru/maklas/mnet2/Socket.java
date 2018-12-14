@@ -70,6 +70,15 @@ public interface Socket {
      */
     void send(NetBatch batch);
 
+    /**
+     * <p>Sends batch to connected socket if current state == CONNECTED</p>
+     * <p>This method provides unreliable, and unordered Object sending.
+     * </p>
+     *
+     * @param batch Batch to be send.
+     */
+    void sendUnreliable(NetBatch batch);
+
 
     /**
      * <p>Receives data onto the {@link SocketProcessor}.
@@ -93,12 +102,6 @@ public interface Socket {
      * Whether or not Congestion control is enabled and controls resend delay
      */
     boolean isCongestionControlEnabled();
-
-    /**
-     * Enable/Disable automatic control over resend delay.
-     * <b>Warning. Feature is in developing state</b>
-     */
-    void setCongestionControlEnabled(boolean enabled);
 
     /**
      * Current value of how many milliseconds socket wait to resend presumably lost packet
