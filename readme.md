@@ -178,7 +178,7 @@ Use `serverSocket.close()`. By closing serverSocket all sub-sockets will also be
 
 ## Adding to your project
 1. Add JitPack repo if you haven't already `maven { url "https://jitpack.io" }`
-2. Add as a dependency `compile "com.github.maklas:MNet-2:0.3"` (check current version in GitHub releases)
+2. Add as a dependency `compile "com.github.maklas:MNet-2:0.4"` (check current version in GitHub releases)
 
 ## FAQ
 
