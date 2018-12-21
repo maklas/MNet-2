@@ -15,9 +15,6 @@ You can decline users before establishing connection with them. Can be used to p
 
 ### Cons:
 * No reliable unordered sending (yet)
-* No automated mechanism to determine packet resend delay if it's dropped. Have to be set manually.
-* Uses 1 thread for receiving data from UDP channel and deserializing objects. (More than enough for 6 concurrent connections, but
-can clog the thread if a lot of data is sent by too many clients at the same time)
 * Only single-threaded usage.
 * No protection from dos or any kind of attack really
 

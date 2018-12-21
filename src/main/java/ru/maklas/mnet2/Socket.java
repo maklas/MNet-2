@@ -1,5 +1,6 @@
 package ru.maklas.mnet2;
 
+import ru.maklas.mnet2.congestion.CongestionManager;
 import ru.maklas.mnet2.serialization.Serializer;
 
 import java.io.IOException;
@@ -99,20 +100,25 @@ public interface Socket {
     void stop();
 
     /**
-     * Whether or not Congestion control is enabled and controls resend delay
-     */
-    boolean isCongestionControlEnabled();
-
-    /**
      * Current value of how many milliseconds socket wait to resend presumably lost packet
      */
     long getResendDelay();
 
     /**
      * Sets current resend delay. Will determine how many milliseconds socket waits to resend presumably lost packet.
-     * <b>If {@link #isCongestionControlEnabled()} feature enabled, then this field will be overwritten in the nearest future.</b>
+     * <b>If CongestionManager is working, then this field might be overwritten in the nearest future.</b>
      */
     void setResendDelay(long delay);
+
+    /**
+     * Currently working congestion manager
+     */
+    CongestionManager getCongestionManager();
+
+    /**
+     * Set congestion manager for controlling resend cooldown.
+     */
+    void setCongestionManager(CongestionManager cm);
 
     /**
      * All listeners are removed when socket is closed

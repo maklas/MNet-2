@@ -3,6 +3,8 @@ package ru.maklas.mnet2;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.AtomicQueue;
 import com.badlogic.gdx.utils.ObjectMap;
+import ru.maklas.mnet2.congestion.CongestionManager;
+import ru.maklas.mnet2.congestion.DefaultCongestionManager;
 import ru.maklas.mnet2.serialization.Serializer;
 
 import java.io.IOException;
@@ -47,8 +49,7 @@ public class SocketImpl implements Socket{
     //Аккумулирует bigRequest пока они не соберутся полностью.
     private final ObjectMap<Integer, BigStorage> bigAccumulator = new ObjectMap<Integer, BigStorage>();
     //Осуществляет контроль над частотой ресендов
-    private CongestionControl cc = new CongestionControl();
-    private volatile boolean enableCongestionControl = false;
+    private volatile CongestionManager cm = new DefaultCongestionManager();
     private int bigSeqCounter = 1;
 
     //Params
@@ -523,12 +524,13 @@ public class SocketImpl implements Socket{
     }
 
     @Override
-    public boolean isCongestionControlEnabled() {
-        return enableCongestionControl;
+    public CongestionManager getCongestionManager() {
+        return cm;
     }
 
-    public void setCongestionControlEnabled(boolean enabled) {
-        this.enableCongestionControl = enabled;
+    @Override
+    public void setCongestionManager(CongestionManager cm) {
+        this.cm = cm;
     }
 
     @Override
@@ -803,17 +805,7 @@ public class SocketImpl implements Socket{
             ResendPacket removed = requestList.remove(seq);
             if (removed != null){
                 sendPacketPool.free(removed);
-                if (enableCongestionControl) {
-                    if (removed.resends == 0) {
-                        cc.noResendsDelays.add(currentTime - removed.sendTime);
-                    } else {
-                        cc.resendPackets++;
-                    }
-                    if (cc.size() > 25) {
-                        resendCD = cc.calculateAdjustment(resendCD);
-                        cc.clear();
-                    }
-                }
+                resendCD = cm.calculateDelay(removed, currentTime, resendCD);
                 return true;
             }
         }
@@ -973,7 +965,7 @@ public class SocketImpl implements Socket{
                 '}';
     }
 
-    static class ResendPacket {
+    public static class ResendPacket {
         public long sendTime;
         public int resends;
         public byte[] data;

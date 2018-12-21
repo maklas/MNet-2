@@ -1,4 +1,6 @@
-package ru.maklas.mnet2;
+package ru.maklas.mnet2.congestion;
+
+import ru.maklas.mnet2.SocketImpl;
 
 public interface CongestionManager {
 
