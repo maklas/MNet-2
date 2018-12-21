@@ -4,6 +4,7 @@ import com.esotericsoftware.kryo.KryoException;
 import org.junit.Test;
 import ru.maklas.mnet2.objects.ConnectionRequest;
 import ru.maklas.mnet2.objects.ConnectionResponse;
+import ru.maklas.mnet2.objects.MySerializer;
 import ru.maklas.mnet2.objects.UpdateObject;
 
 import java.net.InetAddress;
@@ -21,7 +22,7 @@ public class TestBufferOverflows implements ServerAuthenticator {
         ServerSocket serverSocket = TestUtils.newServerSocket(TestUtils.udp(port, 200, 40), this);
         TestUtils.startUpdating(serverSocket, 16);
 
-        Socket client = new SocketImpl(InetAddress.getLocalHost(), port, TestUtils.serializerSupplier.get());
+        Socket client = new SocketImpl(InetAddress.getLocalHost(), port, new MySerializer(512).get());
 
         Log.trace("Connecting...");
         ServerResponse response = client.connect(new ConnectionRequest("maklas", "123", 22, true), 15000);
