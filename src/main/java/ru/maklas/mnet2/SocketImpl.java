@@ -408,7 +408,7 @@ public class SocketImpl implements Socket{
     public void update(SocketProcessor processor) {
         if (isConnected()) {
             processData(processor);
-            checkResendAndPing();
+            checkResendPingAndInactivity(System.currentTimeMillis());
         }
     }
 
@@ -524,6 +524,11 @@ public class SocketImpl implements Socket{
     }
 
     @Override
+    public void resetInactivity(){
+        lastTimeReceivedMsg = System.currentTimeMillis();
+    }
+
+    @Override
     public CongestionManager getCongestionManager() {
         return cm;
     }
@@ -585,14 +590,14 @@ public class SocketImpl implements Socket{
                 byte[] receiveBuffer = SocketImpl.this.receiveBuffer;
                 DatagramPacket packet = SocketImpl.this.receivePacket;
                 UDPSocket udp = SocketImpl.this.udp;
-                boolean keepRunning = true;
-                while (keepRunning) {
+                while (true) {
                     try {
                         udp.receive(packet);
                     } catch (IOException e) {
-                        keepRunning = false;
-                        if (!udp.isClosed()) {
-                            queue.put(new DisconnectionPacket(DisconnectionPacket.TIMED_OUT, DCType.TIME_OUT));
+                        if (udp.isClosed()){
+                            return;
+                        } else {
+                            continue;
                         }
                     }
 
@@ -882,8 +887,7 @@ public class SocketImpl implements Socket{
         pingListeners.clear();
     }
 
-    void checkResendAndPing() {
-        final long currTime = System.currentTimeMillis();
+    void checkResendPingAndInactivity(long currTime) {
         if (currTime - lastPingSendTime > pingCD){
             sendPing();
             lastPingSendTime = currTime;
@@ -898,6 +902,9 @@ public class SocketImpl implements Socket{
                     packet.resends++;
                 }
             }
+        }
+        if (currTime - lastTimeReceivedMsg > inactivityTimeout){
+            queue.put(new DisconnectionPacket(DisconnectionPacket.TIMED_OUT, DCType.TIME_OUT));
         }
     }
 

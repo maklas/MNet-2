@@ -111,6 +111,13 @@ public interface Socket {
     void setResendDelay(long delay);
 
     /**
+     * Resets inactivity timeout countdown.
+     * Useful when Android application went to background and connection was temporarily down.
+     * If this method is not called before next update(), connection can be lost.
+     */
+    void resetInactivity();
+
+    /**
      * Currently working congestion manager
      */
     CongestionManager getCongestionManager();

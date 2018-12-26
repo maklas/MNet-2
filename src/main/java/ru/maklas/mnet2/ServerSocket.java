@@ -119,12 +119,8 @@ public class ServerSocket {
         synchronized (socketMap){
             for (SocketMap.SocketWrap wrap : socketMap.sockets) {
                 SocketImpl socket = wrap.socket;
-                if (now - socket.lastTimeReceivedMsg > socket.inactivityTimeout) {
-                    socket.queue.put(new SocketImpl.DisconnectionPacket(SocketImpl.DisconnectionPacket.TIMED_OUT, DCType.TIME_OUT));
-                } else {
-                    if (socket.isConnected()) {
-                        socket.checkResendAndPing();
-                    }
+                if (socket.isConnected()) {
+                    socket.checkResendPingAndInactivity(now);
                 }
             }
         }
