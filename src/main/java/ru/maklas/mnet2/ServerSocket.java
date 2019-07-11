@@ -96,7 +96,10 @@ public class ServerSocket {
     private void processAuth() {
         ConnectionRequest poll = connectionRequests.poll();
         while (poll != null){
-            if (socketMap.get(poll.address, poll.port) != null) continue; //Отбрасываем если кто-то уже коннектился и подтвердился.
+            if (socketMap.get(poll.address, poll.port) != null) {
+                poll = connectionRequests.poll();
+                continue; //Отбрасываем если кто-то уже коннектился и подтвердился.
+            }
 
             //Создаём полупустой сокет
             SocketImpl socket = new SocketImpl(udp, poll.address, poll.port, bufferSize);
